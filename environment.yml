@@ -5,7 +5,7 @@ channels:
   - defaults
 dependencies:
   - python=3.11.12
-  - graph-tool
+  - graph-tool=2.97
   - pip
   - pip:
     - jupyter==1.1.1
