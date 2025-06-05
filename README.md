@@ -5,3 +5,6 @@ First off, install Miniconda, move to the project directory, and then run the fo
 ```bash
 conda env create --prefix ./.conda -f environment.yml
 ```
+Then open the [Notebook](notebook.ipynb) and run it.
+
+The notebook was developed using Visual Studio Code,
