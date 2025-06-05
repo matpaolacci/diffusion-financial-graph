@@ -7,4 +7,4 @@ conda env create --prefix ./.conda -f environment.yml
 ```
 Then open the [Notebook](notebook.ipynb) and run it.
 
-The notebook was developed using Visual Studio Code,
+The notebook was developed using Visual Studio Code, so some plots may not render correctly in other environments (e.g., Google Colab) due to differences in how interactive output is handled.
