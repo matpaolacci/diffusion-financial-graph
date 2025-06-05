@@ -17,3 +17,4 @@ dependencies:
     - torch-geometric==2.6.1
     - prettytable>=3.16,<3.17
     - kagglehub
+    - plotly>=6.1,<6.2
