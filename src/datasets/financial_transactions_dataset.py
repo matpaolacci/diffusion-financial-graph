@@ -82,11 +82,18 @@ class FinancialGraph(InMemoryDataset):
     initialized = False
 
     def __init__(self, dataset_url, dataset_name, split, root, transform=None, pre_transform=None, pre_filter=None):
-        super().__init__(root, transform, pre_transform, pre_filter)
         self.split = split
         self.dataset_url = dataset_url
         self.dataset_name = dataset_name
-        self.data, self.slices = torch.load(self.processed_paths[0])
+        if self.split == 'train':
+            self.file_idx = 0
+        elif self.split == 'val':
+            self.file_idx = 1
+        else:
+            self.file_idx = 2
+
+        super().__init__(root, transform, pre_transform, pre_filter)
+        self.data, self.slices = torch.load(self.processed_paths[self.file_idx])
 
     @property
     def raw_file_names(self):
@@ -94,7 +101,7 @@ class FinancialGraph(InMemoryDataset):
 
     @property
     def processed_file_names(self):
-        return [f'{self.split}_data.pt']
+        return ['train_data.pt', 'val_data.pt', 'test_data.pt']
 
     def download(self):
         if self.initialized:
@@ -103,7 +110,7 @@ class FinancialGraph(InMemoryDataset):
         import kagglehub
         from sklearn.model_selection import train_test_split
 
-        dataset_path = kagglehub.dataset_download(self.dataset_url + "/" + self.dataset_name)
+        dataset_path = kagglehub.dataset_download(self.dataset_url, path=self.dataset_name)
         df = pd.read_csv(dataset_path)
 
         # Stratified split based on the target column
@@ -159,7 +166,7 @@ class FinancialGraph(InMemoryDataset):
             num_nodes=len(all_accounts)
         )
 
-        torch.save(self.collate(data), self.processed_paths[0])
+        torch.save(self.collate(data), self.processed_paths[self.file_idx])
 
 
 class FinancialGraphDataModule(AbstractDataModule):
@@ -169,8 +176,8 @@ class FinancialGraphDataModule(AbstractDataModule):
         base_path = pathlib.Path(os.path.realpath(__file__)).parents[2]
         root_path = os.path.join(base_path, self.datadir)
 
-        datasets = {'train': FinancialGraph(dataset_url=self.cfg.dataset.url, 
-                                                dataset_name=self.cfg.dataset.name,
+        datasets = {'train': FinancialGraph(dataset_url=self.cfg.dataset.datasource.url, 
+                                                dataset_name=self.cfg.dataset.datasource.name,
                                                  split='train', root=root_path),
                     'val': FinancialGraph(dataset_url=self.cfg.dataset.url,
                                             dataset_name=self.cfg.dataset.name,

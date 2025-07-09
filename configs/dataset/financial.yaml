@@ -1,5 +1,5 @@
 name: 'financial'
-dataset:
+datasource:
   url: 'ealtman2019/ibm-transactions-for-anti-money-laundering-aml'
   name: 'LI-Small_Trans.csv'
 datadir: 'data/financial/financial_pyg/'       # Relative to the financial_dataset.py file
