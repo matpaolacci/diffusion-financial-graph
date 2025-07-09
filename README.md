@@ -3,8 +3,16 @@
 First off, install Miniconda, move to the project directory, and then run the following command:
 
 ```bash
-conda env create --prefix ./.conda -f environment.yml
+conda env create --file environments/notebook_env.yml
 ```
-Then open the [Notebook](notebook.ipynb) and run it.
+Then open the [Notebook](notebook.ipynb) and run it selecting the jupyter kernel in the environement _notebook-env_.
 
 The notebook was developed using Visual Studio Code, so some plots may not render correctly in other environments (e.g., Google Colab) due to differences in how interactive output is handled.
+
+```bash
+conda env create --file environments/digress_env.yml
+```
+
+```bash
+conda activate digress-env
+```

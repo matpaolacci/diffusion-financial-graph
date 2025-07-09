@@ -4,7 +4,6 @@ todo.md
 __pycache__/
 *.py[cod]
 *$py.class
-.conda
 .vscode
 .DS_Store
 

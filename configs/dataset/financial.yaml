@@ -1,0 +1,7 @@
+name: 'financial'
+dataset:
+  url: 'ealtman2019/ibm-transactions-for-anti-money-laundering-aml'
+  name: 'LI-Small_Trans.csv'
+datadir: 'data/financial/financial_pyg/'       # Relative to the financial_dataset.py file
+remove_h: null
+filter: True                      # Use the filtered version or the raw guacamol file

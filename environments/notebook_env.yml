@@ -1,4 +1,4 @@
-name: diff-graph-env
+name: notebook-env
 channels:
   - conda-forge
   - pytorch
