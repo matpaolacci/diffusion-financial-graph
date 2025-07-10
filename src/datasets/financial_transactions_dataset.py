@@ -93,7 +93,7 @@ class FinancialGraph(InMemoryDataset):
             self.file_idx = 2
 
         super().__init__(root, transform, pre_transform, pre_filter)
-        self.data, self.slices = torch.load(self.processed_paths[self.file_idx])
+        self.data, self.slices = torch.load(self.processed_paths[self.file_idx], weights_only=False)
 
     @property
     def raw_file_names(self):
@@ -158,15 +158,19 @@ class FinancialGraph(InMemoryDataset):
         # 4. Labels (target variable for each edge)
         y = torch.tensor(edges_df['Is Laundering'].values, dtype=torch.long)
 
+        # need to add node features
+        x = torch.zeros((len(all_accounts), 1)) 
+
         # 5. Build the PyG Data object
         data = Data(
+            x=x,
             edge_index=edge_index,
             edge_attr=edge_attr,
             y=y,
             num_nodes=len(all_accounts)
         )
 
-        torch.save(self.collate(data), self.processed_paths[self.file_idx])
+        torch.save(self.collate([data]), self.processed_paths[self.file_idx])
 
 
 class FinancialGraphDataModule(AbstractDataModule):
@@ -179,11 +183,11 @@ class FinancialGraphDataModule(AbstractDataModule):
         datasets = {'train': FinancialGraph(dataset_url=self.cfg.dataset.datasource.url, 
                                                 dataset_name=self.cfg.dataset.datasource.name,
                                                  split='train', root=root_path),
-                    'val': FinancialGraph(dataset_url=self.cfg.dataset.url,
-                                            dataset_name=self.cfg.dataset.name,
+                    'val': FinancialGraph(dataset_url=self.cfg.dataset.datasource.url,
+                                            dataset_name=self.cfg.dataset.datasource.name,
                                             split='val', root=root_path),
-                    'test': FinancialGraph(dataset_url=self.cfg.dataset.url,
-                                           dataset_name=self.cfg.dataset.name,
+                    'test': FinancialGraph(dataset_url=self.cfg.dataset.datasource.url,
+                                           dataset_name=self.cfg.dataset.datasource.name,
                                             split='test', root=root_path)}
         # print(f'Dataset sizes: train {train_len}, val {val_len}, test {test_len}')
 
@@ -197,7 +201,7 @@ class FinancialDatasetInfos(AbstractDatasetInfos):
     def __init__(self, datamodule, dataset_config):
         self.datamodule = datamodule
         self.name = 'nx_graphs'
-        self.n_nodes = self.datamodule.node_counts()
+        self.n_nodes = self.datamodule.node_counts(max_nodes_possible=706_000)
         self.node_types = torch.tensor([1])               # There are no node types
         self.edge_types = self.datamodule.edge_counts()
         super().complete_infos(self.n_nodes, self.node_types)

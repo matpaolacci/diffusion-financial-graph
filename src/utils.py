@@ -53,7 +53,7 @@ def unnormalize(X, E, y, norm_values, norm_biases, node_mask, collapse=False):
 def to_dense(x, edge_index, edge_attr, batch):
     X, node_mask = to_dense_batch(x=x, batch=batch)
     # node_mask = node_mask.float()
-    edge_index, edge_attr = torch_geometric.utils.remove_self_loops(edge_index, edge_attr)
+    edge_index, edge_attr = torch_geometric.utils.remove_self_loops(edge_index, edge_attr) # Forse da rimuovere
     # TODO: carefully check if setting node_mask as a bool breaks the continuous case
     max_num_nodes = X.size(1)
     E = to_dense_adj(edge_index=edge_index, batch=batch, edge_attr=edge_attr, max_num_nodes=max_num_nodes)
