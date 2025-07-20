@@ -166,10 +166,18 @@ class FinancialGraph(InMemoryDataset):
 
         # Stratified split based on the target column
         train_df, temp_df = train_test_split(
-            df, test_size=0.7, stratify=df['Is Laundering'], random_state=RANDOM_STATE)
+            df, 
+            test_size=0.3, 
+            stratify=df['Is Laundering'], 
+            random_state=RANDOM_STATE
+        )
 
         val_df, test_df = train_test_split(
-            temp_df, test_size=0.5, stratify=temp_df['Is Laundering'], random_state=RANDOM_STATE)
+            temp_df, 
+            test_size=0.5, 
+            stratify=temp_df['Is Laundering'], 
+            random_state=RANDOM_STATE
+        )
 
         # Save the split files in the raw directory
         train_df.to_csv(os.path.join(self.raw_dir, 'train.csv'), index=False)
