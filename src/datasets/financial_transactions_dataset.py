@@ -1,16 +1,73 @@
 import torch
-from torch_geometric.data import Data, InMemoryDataset
+import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
 import os
-from src.datasets.abstract_dataset import AbstractDataModule, AbstractDatasetInfos
 import pathlib
+
+from torch_geometric.data import Data, InMemoryDataset
+from sklearn.model_selection import train_test_split
+from src.datasets.abstract_dataset import AbstractDataModule, AbstractDatasetInfos
+from graph_tool.all import label_components, Graph, GraphView
 
 RANDOM_STATE = 42
 
 class DatasetBuilderUtilities:
     @staticmethod
-    def get_nodes(df: pd.DataFrame) -> pd.DataFrame:
+    def _get_largest_component_df(edges_df: pd.DataFrame, csv_path: str) -> pd.DataFrame:
+        """
+        Extract the largest component of the graph.
+        :param edges_df: The dataframe with the edges of the graph.
+        :return: A DataFrame containing only the edges from the largest component.
+        """
+        print(f'Processing df from [{csv_path}]')
+        
+        trans_graph = Graph(
+            list(edges_df[['Source Account', 'Destination Account']].itertuples(index=False, name=None)),
+            hashed=True,
+            directed=True
+        )
+
+        comp_label, hist = label_components(trans_graph, directed=False)
+        largest_comp_label = hist.argmax()
+
+        # Create a filter to mask trans_graph and obtain the largest component's graph
+        vfilt = trans_graph.new_vertex_property("bool")
+        vfilt.a = (comp_label.a == largest_comp_label)
+
+        largest_comp_view = GraphView(trans_graph, vfilt=vfilt)
+        print(f'Original graph has [{trans_graph.num_vertices()}] vertices')
+        print(f'Largest component has [{largest_comp_view.num_vertices()}] vertices')
+        print(f'Original graph has [{trans_graph.num_edges()}] edges')
+        print(f'Largest component has [{largest_comp_view.num_edges()}] edges')
+
+        # Get the string IDs of the vertices from the internal property map
+        vertex_ids = trans_graph.vp.ids
+
+        # Extract edges from the largest component view
+        largest_comp_edges = set()
+        for edge in largest_comp_view.edges():
+            source_id = vertex_ids[edge.source()]
+            dest_id = vertex_ids[edge.target()]
+            largest_comp_edges.add((source_id, dest_id))
+
+        # Create a DataFrame with the edges from the largest component
+        edges_largest_comp_df = pd.DataFrame(list(largest_comp_edges), columns=['Source Account', 'Destination Account'])
+
+        # Preserve order of edges_df by using its index
+        edges_df_with_index = edges_df.reset_index()
+
+        # Filter the original edges_df to keep only the edges present in the largest component
+        filtered_edges_df = pd.merge(edges_df_with_index, edges_largest_comp_df, on=['Source Account', 'Destination Account'], how='inner')
+
+        # Sort by the original index to restore order, then drop the index column
+        filtered_edges_df_sorted = filtered_edges_df.sort_values('index').drop(columns=['index'])
+        print(f'Original dataframe has [{edges_df.shape[0]}] edges')
+        print(f'Filtered dataframe has [{filtered_edges_df_sorted.shape[0]}] edges')
+
+        return filtered_edges_df_sorted
+
+    @staticmethod
+    def _get_nodes(df: pd.DataFrame) -> pd.DataFrame:
         ldf = df[['Source Account', 'From Bank']]
         rdf = df[['Destination Account', 'To Bank']] 
 
@@ -41,7 +98,7 @@ class DatasetBuilderUtilities:
         return df.reset_index()
 
     @staticmethod
-    def preprocess(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, list[str]]:
+    def preprocess(df: pd.DataFrame, csv_path: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, list[str]]:
         def df_label_encoder(df, columns):
             from sklearn import preprocessing
             le = preprocessing.LabelEncoder()
@@ -71,15 +128,12 @@ class DatasetBuilderUtilities:
         df['Source Account'] = df['From Bank'].astype(str) + '_' + df['Source Account']
         df['Destination Account'] = df['To Bank'].astype(str) + '_' + df['Destination Account']
         edges_df = df.sort_values(by=['Source Account'])
-        receiving_df = edges_df[['Destination Account', 'Amount Received', 'Receiving Currency']]
-        paying_df = edges_df[['Source Account', 'Amount Paid', 'Payment Currency']]
-        currency_ls = sorted(edges_df['Receiving Currency'].unique())
+        
+        largest_comp_edges_df = DatasetBuilderUtilities._get_largest_component_df(edges_df, csv_path)
 
-        return edges_df, receiving_df, paying_df, currency_ls
+        return largest_comp_edges_df, DatasetBuilderUtilities._get_nodes(largest_comp_edges_df)
 
 class FinancialGraph(InMemoryDataset):
-
-    initialized = False
 
     def __init__(self, dataset_url, dataset_name, split, root, transform=None, pre_transform=None, pre_filter=None):
         self.split = split
@@ -104,9 +158,6 @@ class FinancialGraph(InMemoryDataset):
         return ['train_data.pt', 'val_data.pt', 'test_data.pt']
 
     def download(self):
-        if self.initialized:
-            return
-
         import kagglehub
         from sklearn.model_selection import train_test_split
 
@@ -125,8 +176,6 @@ class FinancialGraph(InMemoryDataset):
         val_df.to_csv(os.path.join(self.raw_dir, 'val.csv'), index=False)
         test_df.to_csv(os.path.join(self.raw_dir, 'test.csv'), index=False)
 
-        self.initialized = True
-
     def process(self):
         file_path = os.path.join(self.raw_dir, f'{self.split}.csv')
         df = pd.read_csv(file_path)
@@ -137,8 +186,7 @@ class FinancialGraph(InMemoryDataset):
         df['Timestamp'] = pd.to_datetime(df['Timestamp'])
         df.drop_duplicates(inplace=True)
 
-        edges_df, _, _, _ = DatasetBuilderUtilities.preprocess(df)
-        all_accounts = DatasetBuilderUtilities.get_nodes(edges_df)
+        edges_df, all_accounts = DatasetBuilderUtilities.preprocess(df, self.raw_paths[self.file_idx])
 
         # 1. Build a mapping from account IDs to node indices
         account2idx = {acc: i for i, acc in enumerate(all_accounts['Account'])}
@@ -146,7 +194,7 @@ class FinancialGraph(InMemoryDataset):
         # 2. Create edge_index tensor (2 x num_edges)
         src = edges_df['Source Account'].map(account2idx).values
         dst = edges_df['Destination Account'].map(account2idx).values
-        edge_index = torch.tensor([src, dst], dtype=torch.long)
+        edge_index = torch.tensor(np.array([src, dst]), dtype=torch.long)
 
         # 3. Prepare edge features (features for each transaction/edge)
         edge_features = edges_df[
