@@ -5,3 +5,4 @@ datasource:
 datadir: 'data/financial/financial_pyg/'       # Relative to the financial_dataset.py file
 remove_h: null
 filter: True                      # Use the filtered version or the raw guacamol file
+k_hop: 1
