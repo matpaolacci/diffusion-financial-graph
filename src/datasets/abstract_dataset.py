@@ -54,8 +54,13 @@ class AbstractDataModule(LightningDataset):
         d = torch.zeros(num_classes, dtype=torch.float)
 
         for i, data in enumerate(self.train_dataloader()):
+            # data.batch is a tensor that acts as a label for every node, telling you which graph it originally came from.
+            # Is a way to know which nodes belong to Graph A and which belong to Graph B.
+            # So the function torch.unique tell us how many nodes belong to each graph in the batch
             unique, counts = torch.unique(data.batch, return_counts=True)
-
+            
+            # Count the total number of possible edges for each graph in the batch, 
+            #   then store the results in the all_pairs variable
             all_pairs = 0
             for count in counts:
                 all_pairs += count * (count - 1)

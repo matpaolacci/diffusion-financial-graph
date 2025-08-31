@@ -27,6 +27,12 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
         self.cfg = cfg
         self.name = cfg.general.name
         self.model_dtype = torch.float32
+
+        # During the trainng we don't apply it t times iteratively. Instead, we do the following:
+        #     1. Start with the original, clean data (at step t=0).
+        #     2. Pick a random diffusion step t from 1 to T.
+        #     3. Thanks to the mathematical properties of the diffusion process, 
+        #          we can calculate the exact amount of noise that would be present at step t and add it all in a single shot.
         self.T = cfg.model.diffusion_steps
 
         self.Xdim = input_dims['X']
@@ -70,7 +76,7 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
 
         self.noise_schedule = PredefinedNoiseScheduleDiscrete(cfg.model.diffusion_noise_schedule,
                                                               timesteps=cfg.model.diffusion_steps)
-
+        # TODO: Understand how to use the following two distributions 
         if cfg.model.transition == 'uniform':
             self.transition_model = DiscreteUniformTransition(x_classes=self.Xdim_output, e_classes=self.Edim_output,
                                                               y_classes=self.ydim_output)
@@ -106,7 +112,8 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
             return
         dense_data, node_mask = utils.to_dense(data.x, data.edge_index, data.edge_attr, data.batch)
         dense_data = dense_data.mask(node_mask)
-        X, E = dense_data.X, dense_data.E
+        X = dense_data.X # X.shape := (batch_size, max_nodes_across_graphs_in_batch, node_features)
+        E = dense_data.E # E.shape := (batch_size, max_nodes_across_graphs_in_batch, max_nodes_across_graphs_in_batch, edge_features)
         noisy_data = self.apply_noise(X, E, data.y, node_mask)
         extra_data = self.compute_extra_data(noisy_data)
         pred = self.forward(noisy_data, extra_data, node_mask)

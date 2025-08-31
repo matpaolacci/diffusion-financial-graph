@@ -3,8 +3,9 @@ import numpy as np
 import pandas as pd
 import os
 import pathlib
+import torch.nn.functional as F
 from torch_geometric.data import Data, InMemoryDataset
-from torch_geometric.utils import k_hop_subgraph
+from torch_geometric.utils import k_hop_subgraph, remove_self_loops
 from src.datasets.abstract_dataset import AbstractDataModule, AbstractDatasetInfos
 from src.datasets.utils.financial_dataset_builder_utilities import DatasetBuilderUtilities
 
@@ -17,6 +18,9 @@ class FinancialGraph(InMemoryDataset):
         self.dataset_url = dataset_url
         self.dataset_name = dataset_name
         self.k_hop = k_hop
+
+        # The maximum number of edges in a k-hop subgraph, used for edge_counts functions
+        self.max_subgraph_edges = None
         if self.split == 'train':
             self.file_idx = 0
         elif self.split == 'val':
@@ -40,7 +44,7 @@ class FinancialGraph(InMemoryDataset):
         from sklearn.model_selection import train_test_split
 
         dataset_path = kagglehub.dataset_download(self.dataset_url, path=self.dataset_name)
-        df = pd.read_csv(dataset_path)
+        df = pd.read_csv(dataset_path).head(2_000_000)  # TODO: For debugging purposes, we use only 10k rows
 
         # A stratified split is used to ensure that the proportion of values in the sample
         #   produced is the same as the proportion of values produced in the whole dataset.
@@ -73,7 +77,8 @@ class FinancialGraph(InMemoryDataset):
         df['Timestamp'] = pd.to_datetime(df['Timestamp'])
         df.drop_duplicates(inplace=True)
 
-        # TODO: It needs to add some random non laundering accounts to the dataset
+        # 	TODO: It needs to add some random non laundering accounts to the dataset, 
+        #       for now, we only have subgraphs around laundering accounts.
         laundering_edge_df, laundering_accounts = DatasetBuilderUtilities.preprocess(df, self.raw_paths[self.file_idx])
         
         # 1. The dataframe contains only the edges from one direction (src -> dst), 
@@ -93,12 +98,13 @@ class FinancialGraph(InMemoryDataset):
         # 4. Prepare edge features (features for each transaction/edge)
         laundering_edge_features = undirected_laundering_edges_df[
             ['Amount Paid', 'Timestamp', 'hour', 'day of month', 'month', 'weekday',
-            'Receiving Currency', 'Payment Currency', 'Payment Format', 'Is Laundering']
+            'Receiving Currency', 'Payment Currency', 'Payment Format'] # TODO: Maybe it could be useful to add the Is Laundering property also here
         ].values
-        laundering_edge_attr = torch.tensor(laundering_edge_features, dtype=torch.float32)
+        laundering_edge_attr = torch.tensor(laundering_edge_features, dtype=torch.float)
 
         data_list: list[Data] = []
         avg_subgraph_size = 0
+        max_subgraph_edges = 0
 
         # 5. Iterate over each laundering account and build the k-hop subgraph
         for _, node_index in laundering_account_2idx.items():
@@ -107,15 +113,29 @@ class FinancialGraph(InMemoryDataset):
                 k_hop_subgraph(node_index, self.k_hop, laundering_edge_indexes, relabel_nodes=True)
             avg_subgraph_size += len(subset_laundering_nodes)
 
-            # 5.2 Get the edge attributes for the subgraph excluding the 'Is Laundering' column
-            subgraph_edge_attr = laundering_edge_attr[edge_mask][:, :-1]
+            # 5.2 Get the edge attributes for the subgraph
+            subgraph_edge_attr_full = laundering_edge_attr[edge_mask]
 
-            # 5.3 Create the true labels (Is Laundering) for the subgraph edges
-            y = torch.tensor(laundering_edge_attr[edge_mask][:, -1], dtype=torch.long).unsqueeze(dim=1)
+            # 5.3 Remove self-loops from edge_index and edge_attr
+            subgraph_edge_index, subgraph_edge_attr_full = remove_self_loops(
+                subgraph_edge_index, subgraph_edge_attr_full
+            )
 
-            # 5.4 Create the Data object for the subgraph
+            max_subgraph_edges = max(max_subgraph_edges, subgraph_edge_index.shape[1])
+            
+            # 5.4 Get the subset of edge attributes corresponding to the subgraph edges
+            subgraph_edge_attr = subgraph_edge_attr_full[:, :]
+
+            # 5.5 Create the true labels (Is Laundering) for the subgraph edges
+            x = F.one_hot(
+                torch.tensor(laundering_accounts.iloc[subset_laundering_nodes]['Is Laundering'].values), 
+                num_classes=2
+            ).float()
+            y = torch.zeros(size=(1, 0), dtype=torch.float)
+
+            # 5.6 Create the Data object for the subgraph
             data = Data(
-                x=torch.zeros((subset_laundering_nodes.shape[0]), 1),  # Dummy features
+                x=x,
                 edge_index=subgraph_edge_index,
                 edge_attr=subgraph_edge_attr,
                 y=y,
@@ -127,6 +147,7 @@ class FinancialGraph(InMemoryDataset):
         print(f"Number of k-hop subgraphs: [{len(data_list)}]")
         print(f'Average k-hop subgraph size: [{avg_subgraph_size:.2f}]')
 
+        self.max_subgraph_edges = max_subgraph_edges
         torch.save(self.collate(data_list), self.processed_paths[self.file_idx])
 
 
@@ -154,11 +175,37 @@ class FinancialGraphDataModule(AbstractDataModule):
     def __getitem__(self, item):
         return self.inner[item]
     
+    def edge_counts(self):
+        num_classes = None
+        for data in self.train_dataloader():
+            num_classes = data.edge_attr.shape[1]
+            break
+
+        d = torch.zeros(num_classes, dtype=torch.float)
+
+        # Iterates over each batch in the training dataloader
+        for i, data in enumerate(self.train_dataloader()):
+            num_edges = data.edge_index.shape[1]
+            num_non_edges = (self.train_dataset.max_subgraph_edges * data.num_graphs) - num_edges
+
+            # Adds up the values of each edge feature across all edges in the current batch
+            edge_types = data.edge_attr.sum(dim=0)
+            assert num_non_edges >= 0
+
+            # It adds num_non_edges to d[0] to treat the absence of an edge as a specific feature that the model needs to learn.
+            d[0] += num_non_edges
+            
+            #stores the sum of the values for each edge feature column
+            d[1:] += edge_types[1:] 
+
+        d = d / d.sum() # Convert to distribution
+        return d
+    
 class FinancialDatasetInfos(AbstractDatasetInfos):
     def __init__(self, datamodule, dataset_config):
         self.datamodule = datamodule
         self.name = 'nx_graphs'
         self.n_nodes = self.datamodule.node_counts(max_nodes_possible=706_000)
-        self.node_types = torch.tensor([1])               # There are no node types
+        self.node_types = torch.tensor([0.0, 1.0], dtype=torch.float)
         self.edge_types = self.datamodule.edge_counts()
         super().complete_infos(self.n_nodes, self.node_types)

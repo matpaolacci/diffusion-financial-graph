@@ -100,6 +100,8 @@ class DatasetBuilderUtilities:
     @staticmethod
     def preprocess(df: pd.DataFrame, csv_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
+        For now gets the largest component of the graph and returns only the laundering transactions and the accounts involved in them.
+        TODO: It needs to add some random non laundering accounts to the dataset.
         :return:
             laundering_edges_df: A DataFrame containing only the edges involved in laundering transactions.
             laundering_accounts: A DataFrame containing only the accounts involved in laundering transactions.

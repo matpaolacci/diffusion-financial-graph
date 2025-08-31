@@ -51,6 +51,41 @@ def unnormalize(X, E, y, norm_values, norm_biases, node_mask, collapse=False):
 
 
 def to_dense(x, edge_index, edge_attr, batch):
+    """
+    Converts graph data from a sparse representation to a dense one.
+
+    In graph processing, especially with libraries like `torch_geometric`, graph data is often handled in a **sparse**
+    format to save memory. This means graphs in a batch can have different numbers of nodes and edges. The data is
+    typically represented by:
+    *   `x`: A tensor of node features for all nodes in the batch, concatenated together.
+    *   `edge_index`: A tensor defining the edges for all graphs in the batch.
+    *   `edge_attr`: A tensor for features of each edge.
+    *   `batch`: A vector that maps each node to its corresponding graph in the batch.
+
+    However, some models, particularly those based on Transformers or certain diffusion algorithms, work better with
+    **dense**, fixed-size inputs.
+
+    The `to_dense` function performs this conversion:
+    1.  It uses `to_dense_batch` from `torch_geometric` to convert the sparse node features `x` into a dense tensor `X`
+        of shape `(batch_size, max_nodes, node_features)`. `max_nodes` is the maximum number of nodes in any graph
+        in the batch. It also returns a `node_mask` to identify which elements are real nodes versus padding.
+    2.  It then uses `to_dense_adj` to convert the `edge_index` and `edge_attr` into a dense adjacency tensor `E` of
+        shape `(batch_size, max_nodes, max_nodes, edge_features)`.
+    3.  The function `encode_no_edge` is called to ensure that parts of the tensor `E` corresponding to non-existent
+        edges are explicitly marked.
+    4.  Finally, it returns a `PlaceHolder` object containing the dense tensors `X` and `E`.
+
+    Args:
+        x: Node features (sparse).
+        edge_index: Edge indices (sparse).
+        edge_attr: Edge features (sparse).
+        batch: Batch vector mapping nodes to graphs.
+
+    Returns:
+        A tuple containing:
+        - A PlaceHolder object with the dense node features (X) and edge features (E).
+        - A node_mask tensor to identify padding nodes in the dense representation.
+    """
     X, node_mask = to_dense_batch(x=x, batch=batch)
     # node_mask = node_mask.float()
     edge_index, edge_attr = torch_geometric.utils.remove_self_loops(edge_index, edge_attr) # Forse da rimuovere
