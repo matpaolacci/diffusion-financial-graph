@@ -193,6 +193,8 @@ class FinancialGraphDataModule(AbstractDataModule):
             assert num_non_edges >= 0
 
             # It adds num_non_edges to d[0] to treat the absence of an edge as a specific feature that the model needs to learn.
+            #  In other words, we calculate the delta between the number of possible edges in the subgraphs and the actual edges present,
+            # TODO: Understand if it is necessary to add a feature for this value
             d[0] += num_non_edges
             
             #stores the sum of the values for each edge feature column
