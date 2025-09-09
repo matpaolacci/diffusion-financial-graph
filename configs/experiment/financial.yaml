@@ -1,0 +1,25 @@
+general:
+    name : 'financial'
+    gpus : 0
+    wandb: 'disabled'
+    sample_every_val: 1
+    samples_to_generate: 4
+    samples_to_save: 2
+    chains_to_save: 1
+    remove_h: True
+    number_chain_steps: 10        # Number of frames in each gif
+    log_every_steps: 1
+train:
+    batch_size: 4
+    save_model: True
+model:
+    n_layers: 2
+    diffusion_noise_schedule: 'cosine'
+    diffusion_steps: 110
+
+    # Dimensions of the MLP for processing node (X), edge (E), and graph (y) features.
+    hidden_mlp_dims: {'X': 256, 'E': 128, 'y': 256}
+
+    # Dimensions of the transformer model, including attention heads and feed-forward networks.
+    hidden_dims: {'dx': 256, 'de': 64, 'dy': 128, 'n_head': 8, 'dim_ffX': 256, 'dim_ffE': 128, 'dim_ffy': 256}
+    extra_features: null
