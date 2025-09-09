@@ -165,18 +165,17 @@ class DatasetBuilderUtilities:
         missing_reverse_edges = []
         
         for _, row in df.iterrows():
-            src, dst, src_bank, dst_bank = \
-                row['Source Account'], row['Destination Account'], row['From Bank'], row['To Bank']
-            
-            # Check if reverse edge (dst, src) exists
-            if (dst, src) not in existing_edges:
-                # Create reverse edge with same features
-                reverse_row = row.copy()
-                reverse_row['Source Account'] = dst
-                reverse_row['Destination Account'] = src
-                reverse_row['From Bank'] = dst_bank
-                reverse_row['To Bank'] = src_bank
-                missing_reverse_edges.append(reverse_row)
+            src, dst = row['Source Account'], row['Destination Account']
+
+            # Create reverse edge
+            reverse_row = row.copy()
+            reverse_row['Source Account'] = dst
+            reverse_row['Destination Account'] = src
+            reverse_row['From Bank'] = row['To Bank']
+            reverse_row['To Bank'] = row['From Bank']
+            reverse_row['Payment Currency'] = row['Receiving Currency']
+            reverse_row['Receiving Currency'] = row['Payment Currency']
+            missing_reverse_edges.append(reverse_row)
         
         # Add missing reverse edges to original dataframe
         if missing_reverse_edges:
