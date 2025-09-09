@@ -16,7 +16,7 @@ conda env create --file environments/digress_env.yml
 
 To start the training, run the following commands from the root of the project:
 ```bash
-python src/main.py dataset=financial
+PYTHONPATH=. python src/main.py dataset=financial +experiment=financial.yaml
 ```
 
 If you are using vscode and if you want to run in debug mode create the launch file at `.vscode/launch.json` and add the following json content:
