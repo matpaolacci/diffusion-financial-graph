@@ -21,5 +21,6 @@ model:
     hidden_mlp_dims: {'X': 256, 'E': 128, 'y': 256}
 
     # Dimensions of the transformer model, including attention heads and feed-forward networks.
+    # The dimensions should satisfy dx % n_head == 0
     hidden_dims: {'dx': 256, 'de': 64, 'dy': 128, 'n_head': 8, 'dim_ffX': 256, 'dim_ffE': 128, 'dim_ffy': 256}
     extra_features: null
