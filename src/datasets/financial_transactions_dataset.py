@@ -95,6 +95,7 @@ class FinancialGraph(InMemoryDataset):
         dst = undirected_laundering_edges_df['Destination Account'].map(laundering_account_2idx).values
         laundering_edge_indexes = torch.tensor(np.array([src, dst]), dtype=torch.long)
 
+        # TODO: needs to be refactored to treat each feature as category
         # 4. Prepare edge features (features for each transaction/edge)
         laundering_edge_features = undirected_laundering_edges_df[
             ['Amount Paid', 'Timestamp', 'hour', 'day of month', 'month', 'weekday',
