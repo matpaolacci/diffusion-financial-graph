@@ -106,6 +106,12 @@ class FinancialGraph(InMemoryDataset):
         avg_subgraph_size = 0
         max_subgraph_edges = 0
 
+        # TODO: 
+        #   There is need to refactor this part, because the absence of an edge is treated as a category in the edge features.
+        #   So, we have to generate all the k-hop subgraphs then, take the maximum number of edges that a subgraph can have in the created dataset,
+        #   the I think that each batch must have the same number of edges and integrate the absence of an edge as a feature of each edge.
+        #   After that, check if edge_counts function needs to be refactored too.
+
         # 5. Iterate over each laundering account and build the k-hop subgraph
         for _, node_index in laundering_account_2idx.items():
             # 5.1 Build the k-hop subgraph around the laundering account node
