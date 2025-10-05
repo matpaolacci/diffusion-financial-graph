@@ -95,13 +95,18 @@ class FinancialGraph(InMemoryDataset):
         dst = undirected_laundering_edges_df['Destination Account'].map(laundering_account_2idx).values
         laundering_edge_indexes = torch.tensor(np.array([src, dst]), dtype=torch.long)
 
-        # TODO: needs to be refactored to treat each feature as category
+        # TODO: needs to be refactored to treat each feature as category (label encoded) then apply one_hot encoding
         # 4. Prepare edge features (features for each transaction/edge)
-        laundering_edge_features = undirected_laundering_edges_df[
-            ['Amount Paid', 'Timestamp', 'hour', 'day of month', 'month', 'weekday',
-            'Receiving Currency', 'Payment Currency', 'Payment Format'] # TODO: Maybe it could be useful to add the Is Laundering property also here
-        ].values
-        laundering_edge_attr = torch.tensor(laundering_edge_features, dtype=torch.float)
+        # laundering_edge_features = undirected_laundering_edges_df[
+        #     ['Amount Paid', 'Timestamp', 'hour', 'day of month', 'month', 'weekday',
+        #     'Receiving Currency', 'Payment Currency', 'Payment Format'] # TODO: Maybe it could be useful to add the Is Laundering property also here
+        # ].values
+        laundering_edge_features = undirected_laundering_edges_df['Payment Format'] + 1
+        laundering_edge_features = torch.tensor(laundering_edge_features, dtype=torch.long)
+        edge_attr = F.one_hot(
+            laundering_edge_features,
+            num_classes=undirected_laundering_edges_df['Payment Format'].nunique() + 1 # +1 because 0 label is reserved to indicate the edge absence
+        ).to(torch.float)
 
         data_list: list[Data] = []
         avg_subgraph_size = 0
@@ -118,10 +123,11 @@ class FinancialGraph(InMemoryDataset):
             # 5.1 Build the k-hop subgraph around the laundering account node
             subset_laundering_nodes, subgraph_edge_index, _, edge_mask = \
                 k_hop_subgraph(node_index, self.k_hop, laundering_edge_indexes, relabel_nodes=True)
-            avg_subgraph_size += len(subset_laundering_nodes)
+            N = len(subset_laundering_nodes)
+            avg_subgraph_size += N
 
             # 5.2 Get the edge attributes for the subgraph
-            subgraph_edge_attr_full = laundering_edge_attr[edge_mask]
+            subgraph_edge_attr_full = edge_attr[edge_mask]
 
             # 5.3 Remove self-loops from edge_index and edge_attr
             subgraph_edge_index, subgraph_edge_attr_full = remove_self_loops(
@@ -129,9 +135,13 @@ class FinancialGraph(InMemoryDataset):
             )
 
             max_subgraph_edges = max(max_subgraph_edges, subgraph_edge_index.shape[1])
+
+            perm = (subgraph_edge_index[0] * N + subgraph_edge_index[1]).argsort()
+            subgraph_edge_index = subgraph_edge_index[:, perm]
+            subgraph_edge_attr_full = subgraph_edge_attr_full[perm]
             
             # 5.4 Get the subset of edge attributes corresponding to the subgraph edges
-            subgraph_edge_attr = subgraph_edge_attr_full[:, :]
+            subgraph_edge_attr = subgraph_edge_attr_full[:, :] #check if it's redundant
 
             # 5.5 Create the true labels (Is Laundering) for the subgraph edges
             x = F.one_hot(
@@ -146,7 +156,7 @@ class FinancialGraph(InMemoryDataset):
                 edge_index=subgraph_edge_index,
                 edge_attr=subgraph_edge_attr,
                 y=y,
-                num_nodes=subset_laundering_nodes.shape[0]
+                num_nodes=N
             )
             data_list.append(data)
 
