@@ -129,13 +129,13 @@ class FinancialGraph(InMemoryDataset):
             subgraph_edge_attr_full = edge_attr[edge_mask]
 
             # 5.3 Remove self-loops from edge_index and edge_attr
-            subgraph_edge_index, subgraph_edge_attr_full = remove_self_loops(
+            subgraph_edge_index, subgraph_edge_attr = remove_self_loops(
                 subgraph_edge_index, subgraph_edge_attr_full
             )
 
             perm = (subgraph_edge_index[0] * N + subgraph_edge_index[1]).argsort()
             subgraph_edge_index = subgraph_edge_index[:, perm]
-            subgraph_edge_attr_full = subgraph_edge_attr_full[perm]
+            subgraph_edge_attr = subgraph_edge_attr[perm]
 
             # 5.5 Create the true labels (Is Laundering) for the subgraph edges
             x = F.one_hot(
