@@ -99,13 +99,6 @@ class DatasetBuilderUtilities:
 
     @staticmethod
     def preprocess(df: pd.DataFrame, csv_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """
-        For now gets the largest component of the graph and returns only the laundering transactions and the accounts involved in them.
-        TODO: It needs to add some random non laundering accounts to the dataset.
-        :return:
-            laundering_edges_df: A DataFrame containing only the edges involved in laundering transactions.
-            laundering_accounts: A DataFrame containing only the accounts involved in laundering transactions.
-        """
         def df_label_encoder(df, columns):
             from sklearn import preprocessing
             le = preprocessing.LabelEncoder()
@@ -135,14 +128,10 @@ class DatasetBuilderUtilities:
         df['Source Account'] = df['From Bank'].astype(str) + '_' + df['Source Account']
         df['Destination Account'] = df['To Bank'].astype(str) + '_' + df['Destination Account']
         edges_df = df.sort_values(by=['Source Account'])
-        
-        largest_comp_edges_df = DatasetBuilderUtilities._get_largest_component_df(edges_df, csv_path)
 
         return (
-            largest_comp_edges_df[largest_comp_edges_df['Is Laundering'] == 1],
-            DatasetBuilderUtilities._get_nodes(
-                largest_comp_edges_df[largest_comp_edges_df['Is Laundering'] == 1]
-            )
+            edges_df,
+            DatasetBuilderUtilities._get_nodes(edges_df)
         )
     
     @staticmethod
