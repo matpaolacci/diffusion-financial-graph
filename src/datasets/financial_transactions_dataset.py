@@ -110,7 +110,6 @@ class FinancialGraph(InMemoryDataset):
 
         data_list: list[Data] = []
         avg_subgraph_size = 0
-        max_subgraph_edges = 0
 
         # TODO: 
         #   There is need to refactor this part, because the absence of an edge is treated as a category in the edge features.
@@ -133,8 +132,6 @@ class FinancialGraph(InMemoryDataset):
             subgraph_edge_index, subgraph_edge_attr_full = remove_self_loops(
                 subgraph_edge_index, subgraph_edge_attr_full
             )
-
-            max_subgraph_edges = max(max_subgraph_edges, subgraph_edge_index.shape[1])
 
             perm = (subgraph_edge_index[0] * N + subgraph_edge_index[1]).argsort()
             subgraph_edge_index = subgraph_edge_index[:, perm]
@@ -164,7 +161,6 @@ class FinancialGraph(InMemoryDataset):
         print(f"Number of k-hop subgraphs: [{len(data_list)}]")
         print(f'Average k-hop subgraph size: [{avg_subgraph_size:.2f}]')
 
-        self.max_subgraph_edges = max_subgraph_edges
         torch.save(self.collate(data_list), self.processed_paths[self.file_idx])
 
 
@@ -191,34 +187,6 @@ class FinancialGraphDataModule(AbstractDataModule):
 
     def __getitem__(self, item):
         return self.inner[item]
-    
-    def edge_counts(self):
-        num_classes = None
-        for data in self.train_dataloader():
-            num_classes = data.edge_attr.shape[1]
-            break
-
-        d = torch.zeros(num_classes, dtype=torch.float)
-
-        # Iterates over each batch in the training dataloader
-        for i, data in enumerate(self.train_dataloader()):
-            num_edges = data.edge_index.shape[1]
-            num_non_edges = (self.train_dataset.max_subgraph_edges * data.num_graphs) - num_edges
-
-            # Adds up the values of each edge feature across all edges in the current batch
-            edge_types = data.edge_attr.sum(dim=0)
-            assert num_non_edges >= 0
-
-            # It adds num_non_edges to d[0] to treat the absence of an edge as a specific feature that the model needs to learn.
-            #  In other words, we calculate the delta between the number of possible edges in the subgraphs and the actual edges present,
-            # TODO: Understand if it is necessary to add a feature for this value
-            d[0] += num_non_edges
-            
-            #stores the sum of the values for each edge feature column
-            d[1:] += edge_types[1:] 
-
-        d = d / d.sum() # Convert to distribution
-        return d
     
 class FinancialDatasetInfos(AbstractDatasetInfos):
     def __init__(self, datamodule, dataset_config):
