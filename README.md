@@ -29,7 +29,7 @@ If you are using vscode and if you want to run in debug mode create the launch f
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/src/main.py",
-      "args": ["dataset=financial"],
+      "args": ["dataset=financial", "+experiment=financial.yaml"],
       "console": "integratedTerminal",
       "env": {
         "PYTHONPATH": "${workspaceFolder}"

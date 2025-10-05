@@ -1,19 +1,16 @@
 general:
     name : 'financial'
-    gpus : 0
+    gpus : 1
     wandb: 'disabled'
     sample_every_val: 1
-    samples_to_generate: 4
-    samples_to_save: 2
+    samples_to_generate: 1
+    samples_to_save: 1
     chains_to_save: 1
     remove_h: True
     number_chain_steps: 10        # Number of frames in each gif
     log_every_steps: 1
-train:
-    batch_size: 4
-    save_model: True
 model:
-    n_layers: 2
+    n_layers: 6
     diffusion_noise_schedule: 'cosine'
     diffusion_steps: 110
 

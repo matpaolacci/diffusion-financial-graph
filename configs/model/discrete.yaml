@@ -2,9 +2,9 @@
 type: 'discrete'
 transition: 'marginal'                          # uniform or marginal
 model: 'graph_tf'
-diffusion_steps: 500
+diffusion_steps: 250
 diffusion_noise_schedule: 'cosine'              # 'cosine', 'polynomial_2'
-n_layers: 5
+n_layers: 6
 
 
 extra_features: null        # TODO: only for debugging purpose, put the proper 'all', 'cycles', 'eigenvalues' or null

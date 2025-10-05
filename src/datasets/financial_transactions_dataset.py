@@ -44,7 +44,7 @@ class FinancialGraph(InMemoryDataset):
         from sklearn.model_selection import train_test_split
 
         dataset_path = kagglehub.dataset_download(self.dataset_url, path=self.dataset_name)
-        df = pd.read_csv(dataset_path).head(2_000_000)  # TODO: For debugging purposes, we use only 10k rows
+        df = pd.read_csv(dataset_path).head(3_000_000)  # TODO: For debugging purposes, we use only 10k rows
 
         # A stratified split is used to ensure that the proportion of values in the sample
         #   produced is the same as the proportion of values produced in the whole dataset.
@@ -95,6 +95,7 @@ class FinancialGraph(InMemoryDataset):
         dst = undirected_laundering_edges_df['Destination Account'].map(laundering_account_2idx).values
         laundering_edge_indexes = torch.tensor(np.array([src, dst]), dtype=torch.long)
 
+        # TODO: needs to be refactored to treat each feature as category
         # 4. Prepare edge features (features for each transaction/edge)
         laundering_edge_features = undirected_laundering_edges_df[
             ['Amount Paid', 'Timestamp', 'hour', 'day of month', 'month', 'weekday',
@@ -105,6 +106,12 @@ class FinancialGraph(InMemoryDataset):
         data_list: list[Data] = []
         avg_subgraph_size = 0
         max_subgraph_edges = 0
+
+        # TODO: 
+        #   There is need to refactor this part, because the absence of an edge is treated as a category in the edge features.
+        #   So, we have to generate all the k-hop subgraphs then, take the maximum number of edges that a subgraph can have in the created dataset,
+        #   the I think that each batch must have the same number of edges and integrate the absence of an edge as a feature of each edge.
+        #   After that, check if edge_counts function needs to be refactored too.
 
         # 5. Iterate over each laundering account and build the k-hop subgraph
         for _, node_index in laundering_account_2idx.items():

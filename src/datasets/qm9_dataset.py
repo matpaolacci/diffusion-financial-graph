@@ -230,7 +230,7 @@ class QM9infos(AbstractDatasetInfos):
             self.num_atom_types = 4
             self.valencies = [4, 3, 2, 1]
             self.atom_weights = {0: 12, 1: 14, 2: 16, 3: 19}
-            self.max_n_nodes = 9
+            self.max_n_nodes = 90
             self.max_weight = 150
             self.n_nodes = torch.tensor([0, 2.2930e-05, 3.8217e-05, 6.8791e-05, 2.3695e-04, 9.7072e-04,
                                          0.0046472, 0.023985, 0.13666, 0.83337])
