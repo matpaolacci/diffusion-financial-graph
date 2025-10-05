@@ -136,9 +136,6 @@ class FinancialGraph(InMemoryDataset):
             perm = (subgraph_edge_index[0] * N + subgraph_edge_index[1]).argsort()
             subgraph_edge_index = subgraph_edge_index[:, perm]
             subgraph_edge_attr_full = subgraph_edge_attr_full[perm]
-            
-            # 5.4 Get the subset of edge attributes corresponding to the subgraph edges
-            subgraph_edge_attr = subgraph_edge_attr_full[:, :] #check if it's redundant
 
             # 5.5 Create the true labels (Is Laundering) for the subgraph edges
             x = F.one_hot(
