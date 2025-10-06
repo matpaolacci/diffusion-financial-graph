@@ -36,3 +36,41 @@ def plot_degree_distribution_comparison(degrees_before, degrees_after, title, sa
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.close()
     print(f"  Degree distribution plot saved to: {save_path}")
+
+
+def plot_affinity_distribution(affinity_series, save_path):
+    """
+    Plot bar chart of affinity distribution.
+
+    Args:
+        affinity_series: Pandas Series with affinity categories
+        save_path: Path to save the figure
+    """
+    # Count occurrences of each affinity category
+    affinity_counts = affinity_series.value_counts()
+
+    # Define the order of categories
+    categories = ['very_low', 'low', 'medium', 'high', 'very_high']
+    counts = [affinity_counts.get(cat, 0) for cat in categories]
+
+    # Create bar plot
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bars = ax.bar(categories, counts, color=['#d62728', '#ff7f0e', '#ffdd57', '#2ca02c', '#1f77b4'],
+                   edgecolor='black', alpha=0.8)
+
+    # Add value labels on top of bars
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height,
+                f'{int(height)}',
+                ha='center', va='bottom', fontweight='bold')
+
+    ax.set_xlabel('Affinity Category', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Number of Edges', fontsize=12, fontweight='bold')
+    ax.set_title('Edge Affinity Distribution', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"  Affinity distribution plot saved to: {save_path}")

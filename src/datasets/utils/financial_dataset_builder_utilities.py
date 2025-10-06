@@ -10,7 +10,7 @@ class DatasetBuilderUtilities:
         :return: A DataFrame containing only the edges from the largest component.
         """
         print(f'Processing df from [{csv_path}], getting the largest component...')
-        
+
         trans_graph = Graph(
             list(edges_df[['Source Account', 'Destination Account']].itertuples(index=False, name=None)),
             hashed=True,
@@ -59,22 +59,19 @@ class DatasetBuilderUtilities:
     @staticmethod
     def _get_nodes(df: pd.DataFrame) -> pd.DataFrame:
         """
-        Returns a DataFrame containing all accounts in the input DataFrame, along with their associated banks and laundering status.
+        Returns a DataFrame containing all accounts in the input DataFrame, along with their laundering status.
 
         Parameters:
-            df (pd.DataFrame): DataFrame containing transaction data with columns such as 'Source Account', 'Destination Account', 'From Bank', 'To Bank', and 'Is Laundering'.
+            df (pd.DataFrame): DataFrame containing transaction data with columns 'Source Account', 'Destination Account', and 'Is Laundering'.
 
         Returns:
-            pd.DataFrame: DataFrame with columns ['Account', 'Bank', 'Is Laundering'] listing all unique accounts, their banks, and laundering status.
+            pd.DataFrame: DataFrame with columns ['Account', 'Is Laundering'] listing all unique accounts and their laundering status.
         """
-
-        ldf = df[['Source Account', 'From Bank']]
-        rdf = df[['Destination Account', 'To Bank']] 
 
         # Get all illicit transactions
         suspicious = df[df['Is Laundering']==1]
 
-        # Separate source and destination accounts involved in illicit transactions.
+        # Separate source and destination accounts involved in illicit transactions.
         source_df = suspicious[['Source Account', 'Is Laundering']].rename({'Source Account': 'Account'}, axis=1)
         destination_df = suspicious[['Destination Account', 'Is Laundering']].rename({'Destination Account': 'Account'}, axis=1)
 
@@ -84,93 +81,26 @@ class DatasetBuilderUtilities:
         # An account could be involved in several transactions, so we drop duplicates
         suspicious = suspicious.drop_duplicates()
 
-        # Merge the source and destination accounts with their respective banks
-        ldf = ldf.rename({'Source Account': 'Account', 'From Bank': 'Bank'}, axis=1)
-        rdf = rdf.rename({'Destination Account': 'Account', 'To Bank': 'Bank'}, axis=1)
-        df = pd.concat([ldf, rdf], join='outer')
-        df = df.drop_duplicates()
+        # Get all unique accounts from source and destination
+        source_accounts = df[['Source Account']].rename({'Source Account': 'Account'}, axis=1)
+        dest_accounts = df[['Destination Account']].rename({'Destination Account': 'Account'}, axis=1)
+        all_accounts = pd.concat([source_accounts, dest_accounts], join='outer')
+        all_accounts = all_accounts.drop_duplicates()
 
-        df['Is Laundering'] = 0
+        all_accounts['Is Laundering'] = 0
 
         # Mark all the transactions of the accounts involved in illicit transactions as illicit
-        df.set_index('Account', inplace=True)
-        df.update(suspicious.set_index('Account'))
-        return df.reset_index()
+        all_accounts.set_index('Account', inplace=True)
+        all_accounts.update(suspicious.set_index('Account'))
+        return all_accounts.reset_index()
 
     @staticmethod
     def preprocess(df: pd.DataFrame, csv_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-        def df_label_encoder(df, columns):
-            from sklearn import preprocessing
-            le = preprocessing.LabelEncoder()
-            for i in columns:
-                df[i] = le.fit_transform(df[i].astype(str))
-            return df
-
-        # Extract some features from the 'Timestamp'
-        df['hour'] = df['Timestamp'].dt.hour
-        df['day of month'] = df['Timestamp'].dt.day
-        df['month'] = df['Timestamp'].dt.month
-        df['weekday'] = df['Timestamp'].dt.weekday
-        
-        # Put the 'Is Laundering' as last column
-        cols = df.columns.tolist()
-        cols.remove('Is Laundering')
-        idx = cols.index('weekday') + 1
-        cols.insert(idx, 'Is Laundering')
-        df = df[cols]
-        
-        df = df_label_encoder(df,['Payment Format', 'Payment Currency', 'Receiving Currency'])
-        
-        # Scale the Timestamp feature to a real-valued range between 0 and 1 using min-max normalization
-        df['Timestamp'] = df['Timestamp'].apply(lambda x: x.value)
-        df['Timestamp'] = (df['Timestamp']-df['Timestamp'].min())/(df['Timestamp'].max()-df['Timestamp'].min())
-
-        df['Source Account'] = df['From Bank'].astype(str) + '_' + df['Source Account']
-        df['Destination Account'] = df['To Bank'].astype(str) + '_' + df['Destination Account']
+        # The dataframe now only contains: Source Account, Destination Account, Is Laundering, count, affinity
+        # No need for complex preprocessing since we already simplified the data
         edges_df = df.sort_values(by=['Source Account'])
 
         return (
             edges_df,
             DatasetBuilderUtilities._get_nodes(edges_df)
         )
-    
-    @staticmethod
-    def get_undirected_edges_df(df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Add the reverse edges to the dataframe in such a way as to make the graph represented by the dataframe undirected.
-        
-        Parameters:
-        df (pd.DataFrame): DataFrame with columns ['Source Account', 'Destination Account', ...]
-                        representing edges and their features
-        
-        Returns:
-        pd.DataFrame: Symmetric dataframe with both (i,j) and (j,i) edges
-        """
-        
-        # Create a set of existing edges for fast lookup
-        existing_edges = set(zip(df['Source Account'], df['Destination Account']))
-        
-        # Find edges that need their reverse added
-        missing_reverse_edges = []
-        
-        for _, row in df.iterrows():
-            src, dst = row['Source Account'], row['Destination Account']
-
-            # Create reverse edge
-            reverse_row = row.copy()
-            reverse_row['Source Account'] = dst
-            reverse_row['Destination Account'] = src
-            reverse_row['From Bank'] = row['To Bank']
-            reverse_row['To Bank'] = row['From Bank']
-            reverse_row['Payment Currency'] = row['Receiving Currency']
-            reverse_row['Receiving Currency'] = row['Payment Currency']
-            missing_reverse_edges.append(reverse_row)
-        
-        # Add missing reverse edges to original dataframe
-        if missing_reverse_edges:
-            missing_df = pd.DataFrame(missing_reverse_edges)
-            symmetric_df = pd.concat([df, missing_df], ignore_index=True)
-        else:
-            symmetric_df = df.copy()
-        
-        return symmetric_df.reset_index(drop=True)

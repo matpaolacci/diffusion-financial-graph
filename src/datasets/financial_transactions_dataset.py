@@ -7,10 +7,10 @@ import kagglehub
 import torch.nn.functional as F
 from sklearn.model_selection import train_test_split
 from torch_geometric.data import Data, InMemoryDataset
-from torch_geometric.utils import k_hop_subgraph, remove_self_loops
+from torch_geometric.utils import k_hop_subgraph, remove_self_loops, to_undirected
 from src.datasets.abstract_dataset import AbstractDataModule, AbstractDatasetInfos
 from src.datasets.utils.financial_dataset_builder_utilities import DatasetBuilderUtilities
-from src.datasets.utils.plots import plot_degree_distribution_comparison
+from src.datasets.utils.plots import plot_degree_distribution_comparison, plot_affinity_distribution
 from src.datasets.utils.sampling import sample_nodes_preserving_degree_distribution
 
 RANDOM_STATE = 42
@@ -52,6 +52,37 @@ class FinancialGraph(InMemoryDataset):
 
         # Remove self-transactions and so the graph with only one node
         df = df[df['Account'] != df['Account.1']].reset_index(drop=True)
+
+        # Keep only required columns
+        df = df[['Account', 'Account.1', 'Is Laundering']].copy()
+
+        # Group edges by (Source, Destination) and count occurrences
+        df_grouped = df.groupby(['Account', 'Account.1'], as_index=False).agg({
+            'Is Laundering': 'max'  # Keep laundering status (max ensures if any transaction was laundering, it's marked as such)
+        })
+        df_grouped['count'] = df.groupby(['Account', 'Account.1']).size().values
+
+        # Categorize count into 5 quintile-based categories
+        quintiles = df_grouped['count'].quantile([0.2, 0.4, 0.6, 0.8]).values
+
+        def categorize_count(count_val):
+            if count_val <= quintiles[0]:
+                return 'very_low'
+            elif count_val <= quintiles[1]:
+                return 'low'
+            elif count_val <= quintiles[2]:
+                return 'medium'
+            elif count_val <= quintiles[3]:
+                return 'high'
+            else:
+                return 'very_high'
+
+        df_grouped['affinity'] = df_grouped['count'].apply(categorize_count)
+        df = df_grouped
+
+        # Plot affinity distribution
+        plot_path = os.path.join(self.raw_dir, 'affinity_distribution.png')
+        plot_affinity_distribution(df['affinity'], plot_path)
 
         # Step 1: Get all unique accounts and their laundering status
         source_accounts = df[['Account', 'Is Laundering']]
@@ -181,46 +212,38 @@ class FinancialGraph(InMemoryDataset):
         test_df.to_csv(os.path.join(self.raw_dir, 'test.csv'), index=False)
 
     def process(self):
-        payment_formats = [ # this is for one hot encoding
-            'US Dollar', 'Euro', 'Bitcoin', 'Yuan', 'Yen', 'UK Pound','Brazil Real', 'Australian Dollar', 
-            'Rupee', 'Ruble', 'Canadian Dollar', 'Mexican Peso', 'Swiss Franc', 'Shekel', 'Saudi Riyal'
-        ]
+        affinity_categories = ['very_low', 'low', 'medium', 'high', 'very_high']
         file_path = os.path.join(self.raw_dir, f'{self.split}.csv')
         df = pd.read_csv(file_path)
 
         # Preprocess the data
         df.rename(columns={'Account': 'Source Account'}, inplace=True)
         df.rename(columns={'Account.1': 'Destination Account'}, inplace=True)
-        df['Timestamp'] = pd.to_datetime(df['Timestamp'])
-        df.drop_duplicates(inplace=True)
 
         edge_df, nodes_df = DatasetBuilderUtilities.preprocess(df, self.raw_paths[self.file_idx])
 
-        # 1. The dataframe contains only the edges from one direction (src -> dst), 
-        #      but torch_geometric requires both directions (src -> dst and dst -> src) to be present for undirected graphs.
-        #    So we add to the dataframe the reverse edges.
-        undirected_edges_df = DatasetBuilderUtilities.get_undirected_edges_df(edge_df)
-        del edge_df
-
-        # 2. Build a mapping from laundering account IDs to node indices
+        # 1. Build a mapping from account IDs to node indices
         account_2idx = { acc: i for i, acc in enumerate(nodes_df['Account']) }
 
-        # 3. Create edge_index tensor (2 x num_edges)
-        src = undirected_edges_df['Source Account'].map(account_2idx).values
-        dst = undirected_edges_df['Destination Account'].map(account_2idx).values
-        laundering_edge_indexes = torch.tensor(np.array([src, dst]), dtype=torch.long)
+        # 2. Create edge_index tensor (2 x num_edges)
+        src = edge_df['Source Account'].map(account_2idx).values
+        dst = edge_df['Destination Account'].map(account_2idx).values
+        edge_indexes = torch.tensor(np.array([src, dst]), dtype=torch.long)
 
-        # TODO: needs to be refactored to treat each feature as category (label encoded) then apply one_hot encoding
-        # 4. Prepare edge features (features for each transaction/edge)
-        # laundering_edge_features = undirected_laundering_edges_df[
-        #     ['Amount Paid', 'Timestamp', 'hour', 'day of month', 'month', 'weekday',
-        #     'Receiving Currency', 'Payment Currency', 'Payment Format']
-        # ].values
-        laundering_edge_features = undirected_edges_df['Payment Format'] + 1
-        laundering_edge_features = torch.tensor(laundering_edge_features, dtype=torch.long)
+        # 3. Prepare edge features (features for each transaction/edge)
+        # Map affinity categories to indices
+        affinity_to_idx = {cat: i+1 for i, cat in enumerate(affinity_categories)}  # +1 to reserve 0 for edge absence
+        edge_features = edge_df['affinity'].map(affinity_to_idx)
+        edge_features = torch.tensor(edge_features, dtype=torch.long)
+
+        # 4. Make the graph undirected using PyTorch Geometric's to_undirected
+        # Apply this BEFORE one-hot encoding so we can use reduce='max' on scalar values
+        edge_indexes, edge_features = to_undirected(edge_indexes, edge_features, reduce='max')
+
+        # 5. Now apply one-hot encoding
         edge_attr = F.one_hot(
-            laundering_edge_features,
-            num_classes=len(payment_formats) + 1 # +1 because 0 label is reserved to indicate the edge absence
+            edge_features,
+            num_classes=len(affinity_categories) + 1 # +1 because 0 label is reserved to indicate the edge absence
         ).to(torch.float)
 
         data_list: list[Data] = []
@@ -229,9 +252,9 @@ class FinancialGraph(InMemoryDataset):
         # 5. Iterate over each laundering account and build the k-hop subgraph
         for _, node_index in account_2idx.items():
             # 5.1 Build the k-hop subgraph around the laundering account node
-            subset_laundering_nodes, subgraph_edge_index, _, edge_mask = \
-                k_hop_subgraph(node_index, self.k_hop, laundering_edge_indexes, relabel_nodes=True)
-            N = len(subset_laundering_nodes)
+            subset_nodes, subgraph_edge_index, _, edge_mask = \
+                k_hop_subgraph(node_index, self.k_hop, edge_indexes, relabel_nodes=True)
+            N = len(subset_nodes)
             avg_subgraph_size += N
 
             assert N > 1
@@ -251,7 +274,7 @@ class FinancialGraph(InMemoryDataset):
 
             # 5.5 Create the true labels (Is Laundering) for the subgraph edges
             x = F.one_hot(
-                torch.tensor(nodes_df.iloc[subset_laundering_nodes]['Is Laundering'].values, dtype=torch.long), 
+                torch.tensor(nodes_df.iloc[subset_nodes]['Is Laundering'].values, dtype=torch.long), 
                 num_classes=2
             ).float()
             y = torch.zeros(size=(1, 0), dtype=torch.float)
