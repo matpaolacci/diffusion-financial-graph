@@ -119,11 +119,12 @@ class FinancialGraph(InMemoryDataset):
             original_laundering_count = len(laundering_accounts)
 
             # Count transactions per laundering account (as source or destination)
-            laundering_degree = pd.concat([
+            laundering_degree_before = pd.concat([
                 df[df['Account'].isin(laundering_accounts['Account'])]['Account'],
                 df[df['Account.1'].isin(laundering_accounts['Account'])]['Account.1'].rename('Account')
             ]).value_counts()
 
+            # Sample while preserving degree distribution
             laundering_accounts = sample_nodes_preserving_degree_distribution(
                 laundering_accounts,
                 laundering_degree_before,
