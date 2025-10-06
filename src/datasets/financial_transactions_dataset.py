@@ -10,12 +10,12 @@ from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.utils import k_hop_subgraph, remove_self_loops, to_undirected
 from src.datasets.abstract_dataset import AbstractDataModule, AbstractDatasetInfos
 from src.datasets.utils.financial_dataset_builder_utilities import DatasetBuilderUtilities
-from src.datasets.utils.plots import plot_degree_distribution_comparison, plot_affinity_distribution
+from src.datasets.utils.plots import plot_degree_distribution_comparison, plot_affinity_distribution, plot_degree_distribution_splits, plot_affinity_distribution_splits
 from src.datasets.utils.sampling import sample_nodes_preserving_degree_distribution
 
 RANDOM_STATE = 42
 SAMPLING_FRACTION_NON_LAUNDERING_NODES = 0
-SAMPLING_FRACTION_LAUNDERING_NODES = 0.4  # Fraction of laundering nodes to keep (0-1)
+SAMPLING_FRACTION_LAUNDERING_NODES = 0.5  # Fraction of laundering nodes to keep (0-1)
 NUM_DEGREE_BINS = 100  # Number of bins for stratified degree sampling
 
 class FinancialGraph(InMemoryDataset):
@@ -173,14 +173,14 @@ class FinancialGraph(InMemoryDataset):
         accounts_in_df = set(df['Account']).union(set(df['Account.1']))
         account_status = account_status[account_status['Account'].isin(accounts_in_df)].reset_index(drop=True)
 
-        # Calculate degrees for all accounts
-        account_degrees = pd.concat([
+        # Calculate degrees for all accounts (before split)
+        account_degrees_before_split = pd.concat([
             df['Account'],
             df['Account.1'].rename('Account')
         ]).value_counts()
 
         # Add degree information to account_status
-        account_status['degree'] = account_status['Account'].map(account_degrees)
+        account_status['degree'] = account_status['Account'].map(account_degrees_before_split)
 
         # Create degree bins using quantiles
         unique_degrees = account_status['degree'].nunique()
@@ -195,7 +195,7 @@ class FinancialGraph(InMemoryDataset):
         # Step 4: Stratified split on accounts for train/val/test (preserving degree distribution)
         train_accounts, temp_accounts = train_test_split(
             account_status,
-            test_size=0.3,
+            test_size=0.4,
             stratify=account_status['degree_bin'],
             random_state=RANDOM_STATE
         )
@@ -207,8 +207,6 @@ class FinancialGraph(InMemoryDataset):
             random_state=RANDOM_STATE
         )
 
-        del temp_accounts, effective_bins, unique_degrees, account_degrees, account_status
-
         # Step 5: Filter transactions where both accounts are in the split
         train_ids = set(train_accounts['Account'])
         val_ids = set(val_accounts['Account'])
@@ -217,6 +215,34 @@ class FinancialGraph(InMemoryDataset):
         train_df = df[df['Account'].isin(train_ids) & df['Account.1'].isin(train_ids)]
         val_df = df[df['Account'].isin(val_ids) & df['Account.1'].isin(val_ids)]
         test_df = df[df['Account'].isin(test_ids) & df['Account.1'].isin(test_ids)]
+
+        # Calculate degrees for each split
+        degrees_train = pd.concat([train_df['Account'], train_df['Account.1'].rename('Account')]).value_counts()
+        degrees_val = pd.concat([val_df['Account'], val_df['Account.1'].rename('Account')]).value_counts()
+        degrees_test = pd.concat([test_df['Account'], test_df['Account.1'].rename('Account')]).value_counts()
+
+        # Plot degree distribution comparison across splits
+        plot_path_degree = os.path.join(self.raw_dir, 'degree_distribution_splits.png')
+        plot_degree_distribution_splits(
+            account_degrees_before_split,
+            degrees_train,
+            degrees_val,
+            degrees_test,
+            plot_path_degree
+        )
+
+        # Plot affinity distribution comparison across splits
+        plot_path_affinity = os.path.join(self.raw_dir, 'affinity_distribution_splits.png')
+        plot_affinity_distribution_splits(
+            df['affinity'],
+            train_df['affinity'],
+            val_df['affinity'],
+            test_df['affinity'],
+            plot_path_affinity
+        )
+
+        del temp_accounts, effective_bins, unique_degrees, account_degrees_before_split, account_status
+        del degrees_train, degrees_val, degrees_test
 
         with open(stats_path, 'a') as f:
             f.write(f"\nTrain split:\n")
