@@ -10,60 +10,13 @@ from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.utils import k_hop_subgraph, remove_self_loops
 from src.datasets.abstract_dataset import AbstractDataModule, AbstractDatasetInfos
 from src.datasets.utils.financial_dataset_builder_utilities import DatasetBuilderUtilities
+from src.datasets.utils.plots import plot_degree_distribution_comparison
+from src.datasets.utils.sampling import sample_nodes_preserving_degree_distribution
 
 RANDOM_STATE = 42
 SAMPLING_FRACTION_NON_LAUNDERING_NODES = 0
 SAMPLING_FRACTION_LAUNDERING_NODES = 0.4  # Fraction of laundering nodes to keep (0-1)
 NUM_DEGREE_BINS = 100  # Number of bins for stratified degree sampling
-def sample_nodes_preserving_degree_distribution(accounts_df, degrees, sampling_fraction, num_bins, random_state):
-    """
-    Sample accounts while preserving the degree distribution using stratified sampling.
-
-    Args:
-        accounts_df: DataFrame with account information
-        degrees: Series with account degrees (index=account, value=degree)
-        sampling_fraction: Fraction of accounts to sample (0-1)
-        num_bins: Number of degree bins for stratification
-        random_state: Random state for reproducibility
-
-    Returns:
-        Sampled accounts DataFrame
-    """
-    if sampling_fraction >= 1.0:
-        return accounts_df
-
-    if sampling_fraction <= 0:
-        return pd.DataFrame(columns=accounts_df.columns)
-
-    # Add degree information to accounts
-    accounts_with_degree = accounts_df.copy()
-    accounts_with_degree['degree'] = accounts_with_degree['Account'].map(degrees)
-
-    # Print unique degree values
-    unique_degrees = accounts_with_degree['degree'].nunique()
-    print(f"  Number of unique degree values: {unique_degrees}")
-    print(f"  Requested bins: {num_bins}, effective bins: {min(num_bins, unique_degrees)}")
-
-    # Create degree bins using quantiles for balanced stratification
-    accounts_with_degree['degree_bin'] = pd.qcut(
-        accounts_with_degree['degree'],
-        q=num_bins,
-        labels=False,
-        duplicates='drop'
-    )
-
-    # Stratified sampling by degree bin
-    sampled_accounts = []
-    for bin_id in accounts_with_degree['degree_bin'].unique():
-        bin_accounts = accounts_with_degree[accounts_with_degree['degree_bin'] == bin_id]
-        sample_size = max(1, int(len(bin_accounts) * sampling_fraction))
-
-        sampled_bin = bin_accounts.sample(n=sample_size, random_state=random_state)
-        sampled_accounts.append(sampled_bin)
-
-    result = pd.concat(sampled_accounts).drop(columns=['degree', 'degree_bin']).reset_index(drop=True)
-    return result
-
 
 class FinancialGraph(InMemoryDataset):
 
@@ -106,11 +59,13 @@ class FinancialGraph(InMemoryDataset):
         all_accounts = pd.concat([source_accounts, dest_accounts])
         account_status = all_accounts.groupby('Account')['Is Laundering'].max().reset_index()
 
-        print(f"\nOriginal dataset statistics:")
-        print(f"  Total accounts: {len(account_status)}")
-        print(f"  Laundering accounts: {account_status['Is Laundering'].sum()} ({account_status['Is Laundering'].sum()/len(account_status)*100:.2f}%)")
-        print(f"  Total transactions: {len(df)}")
-        print(f"  Laundering transactions: {len(df[df['Is Laundering'] == 1])} ({len(df[df['Is Laundering'] == 1])/len(df)*100:.2f}%)")
+        stats_path = os.path.join(self.raw_dir, 'stats.txt')
+        with open(stats_path, 'w') as f:
+            f.write(f"Original dataset statistics:\n")
+            f.write(f"  Total accounts: {len(account_status)}\n")
+            f.write(f"  Laundering accounts: {account_status['Is Laundering'].sum()} ({account_status['Is Laundering'].sum()/len(account_status)*100:.2f}%)\n")
+            f.write(f"  Total transactions: {len(df)}\n")
+            f.write(f"  Laundering transactions: {len(df[df['Is Laundering'] == 1])} ({len(df[df['Is Laundering'] == 1])/len(df)*100:.2f}%)\n")
 
         laundering_accounts = account_status[account_status['Is Laundering'] == 1]
 
@@ -133,12 +88,25 @@ class FinancialGraph(InMemoryDataset):
                 RANDOM_STATE
             )
 
+            # Get degrees after sampling
+            laundering_degree_after = laundering_degree_before[laundering_degree_before.index.isin(laundering_accounts['Account'])]
+
             removed_count = original_laundering_count - len(laundering_accounts)
             removed_percentage = (removed_count / original_laundering_count * 100) if original_laundering_count > 0 else 0
 
-            print(f"\nAfter sampling laundering nodes (preserving degree distribution, {SAMPLING_FRACTION_LAUNDERING_NODES * 100:.1f}%):")
-            print(f"  Remaining laundering accounts: {len(laundering_accounts)}")
-            print(f"  Removed laundering accounts: {removed_count} ({removed_percentage:.2f}%)")
+            with open(stats_path, 'a') as f:
+                f.write(f"\nAfter sampling laundering nodes (preserving degree distribution, {SAMPLING_FRACTION_LAUNDERING_NODES * 100:.1f}%):\n")
+                f.write(f"  Remaining laundering accounts: {len(laundering_accounts)}\n")
+                f.write(f"  Removed laundering accounts: {removed_count} ({removed_percentage:.2f}%)\n")
+
+            # Plot degree distribution comparison
+            plot_path = os.path.join(self.raw_dir, 'laundering_degree_distribution.png')
+            plot_degree_distribution_comparison(
+                laundering_degree_before,
+                laundering_degree_after,
+                'Laundering Nodes Degree Distribution Comparison',
+                plot_path
+            )
 
         # Step 2: Sample non-laundering accounts while keeping ALL laundering accounts
         if SAMPLING_FRACTION_NON_LAUNDERING_NODES > 0 and SAMPLING_FRACTION_NON_LAUNDERING_NODES <= 1.0:
@@ -156,11 +124,12 @@ class FinancialGraph(InMemoryDataset):
             sampled_ids = set(account_status['Account'])
             df = df[df['Account'].isin(sampled_ids) & df['Account.1'].isin(sampled_ids)].reset_index(drop=True)
 
-            print(f"\nAfter sampling ({SAMPLING_FRACTION_NON_LAUNDERING_NODES * 100:.1f}% of non-laundering accounts):")
-            print(f"  Total accounts: {len(account_status)} (all {len(laundering_accounts)} laundering + {len(sampled_non_laundering)} non-laundering)")
-            print(f"  Laundering accounts: {len(laundering_accounts)} ({len(laundering_accounts)/len(account_status)*100:.2f}%)")
-            print(f"  Total transactions: {len(df)}")
-            print(f"  Laundering transactions: {len(df[df['Is Laundering'] == 1])} ({len(df[df['Is Laundering'] == 1])/len(df)*100:.2f}%)")
+            with open(stats_path, 'a') as f:
+                f.write(f"\nAfter sampling ({SAMPLING_FRACTION_NON_LAUNDERING_NODES * 100:.1f}% of non-laundering accounts):\n")
+                f.write(f"  Total accounts: {len(account_status)} (all {len(laundering_accounts)} laundering + {len(sampled_non_laundering)} non-laundering)\n")
+                f.write(f"  Laundering accounts: {len(laundering_accounts)} ({len(laundering_accounts)/len(account_status)*100:.2f}%)\n")
+                f.write(f"  Total transactions: {len(df)}\n")
+                f.write(f"  Laundering transactions: {len(df[df['Is Laundering'] == 1])} ({len(df[df['Is Laundering'] == 1])/len(df)*100:.2f}%)\n")
 
         else:
             # Combine all laundering + sampled non-laundering
@@ -193,17 +162,18 @@ class FinancialGraph(InMemoryDataset):
         val_df = df[df['Account'].isin(val_ids) & df['Account.1'].isin(val_ids)]
         test_df = df[df['Account'].isin(test_ids) & df['Account.1'].isin(test_ids)]
 
-        print(f"\nTrain split:")
-        print(f"  Accounts: {len(train_accounts)} ({train_accounts['Is Laundering'].sum()} laundering)")
-        print(f"  Transactions: {len(train_df)} ({train_df['Is Laundering'].sum()} laundering)")
+        with open(stats_path, 'a') as f:
+            f.write(f"\nTrain split:\n")
+            f.write(f"  Accounts: {len(train_accounts)} ({train_accounts['Is Laundering'].sum()} laundering)\n")
+            f.write(f"  Transactions: {len(train_df)} ({train_df['Is Laundering'].sum()} laundering)\n")
 
-        print(f"\nVal split:")
-        print(f"  Accounts: {len(val_accounts)} ({val_accounts['Is Laundering'].sum()} laundering)")
-        print(f"  Transactions: {len(val_df)} ({val_df['Is Laundering'].sum()} laundering)")
+            f.write(f"\nVal split:\n")
+            f.write(f"  Accounts: {len(val_accounts)} ({val_accounts['Is Laundering'].sum()} laundering)\n")
+            f.write(f"  Transactions: {len(val_df)} ({val_df['Is Laundering'].sum()} laundering)\n")
 
-        print(f"\nTest split:")
-        print(f"  Accounts: {len(test_accounts)} ({test_accounts['Is Laundering'].sum()} laundering)")
-        print(f"  Transactions: {len(test_df)} ({test_df['Is Laundering'].sum()} laundering)")
+            f.write(f"\nTest split:\n")
+            f.write(f"  Accounts: {len(test_accounts)} ({test_accounts['Is Laundering'].sum()} laundering)\n")
+            f.write(f"  Transactions: {len(test_df)} ({test_df['Is Laundering'].sum()} laundering)\n")
 
         # Save the split files
         train_df.to_csv(os.path.join(self.raw_dir, 'train.csv'), index=False)
@@ -297,8 +267,12 @@ class FinancialGraph(InMemoryDataset):
             data_list.append(data)
 
         avg_subgraph_size /= len(account_2idx)
-        print(f"Number of k-hop subgraphs: [{len(data_list)}]")
-        print(f'Average k-hop subgraph size: [{avg_subgraph_size:.2f}]')
+
+        stats_path = os.path.join(self.raw_dir, 'stats.txt')
+        with open(stats_path, 'a') as f:
+            f.write(f"\n{self.split.capitalize()} k-hop subgraphs:\n")
+            f.write(f"  Number of k-hop subgraphs: {len(data_list)}\n")
+            f.write(f"  Average k-hop subgraph size: {avg_subgraph_size:.2f}\n")
 
         torch.save(self.collate(data_list), self.processed_paths[self.file_idx])
 
