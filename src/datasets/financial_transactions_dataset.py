@@ -139,7 +139,7 @@ class FinancialGraph(InMemoryDataset):
                 plot_path
             )
 
-        # Step 2: Sample non-laundering accounts while keeping ALL laundering accounts
+        # Step 2: Sample non-laundering accounts
         if SAMPLING_FRACTION_NON_LAUNDERING_NODES > 0 and SAMPLING_FRACTION_NON_LAUNDERING_NODES <= 1.0:
             non_laundering_accounts = account_status[account_status['Is Laundering'] == 0]
 
@@ -163,28 +163,53 @@ class FinancialGraph(InMemoryDataset):
                 f.write(f"  Laundering transactions: {len(df[df['Is Laundering'] == 1])} ({len(df[df['Is Laundering'] == 1])/len(df)*100:.2f}%)\n")
 
         else:
-            # Combine all laundering + sampled non-laundering
+            # Combine sampled laundering + sampled non-laundering
             account_status = laundering_accounts.reset_index(drop=True)
             sampled_ids = set(account_status['Account'])
             df = df[df['Account'].isin(sampled_ids) & df['Account.1'].isin(sampled_ids)].reset_index(drop=True)
 
 
-        # Step 3: Stratified split on accounts for train/val/test
+        # Step 3: Update account_status to only include accounts that appear in df
+        accounts_in_df = set(df['Account']).union(set(df['Account.1']))
+        account_status = account_status[account_status['Account'].isin(accounts_in_df)].reset_index(drop=True)
+
+        # Calculate degrees for all accounts
+        account_degrees = pd.concat([
+            df['Account'],
+            df['Account.1'].rename('Account')
+        ]).value_counts()
+
+        # Add degree information to account_status
+        account_status['degree'] = account_status['Account'].map(account_degrees)
+
+        # Create degree bins using quantiles
+        unique_degrees = account_status['degree'].nunique()
+        effective_bins = min(NUM_DEGREE_BINS, unique_degrees)
+        account_status['degree_bin'] = pd.qcut(
+            account_status['degree'],
+            q=effective_bins,
+            labels=False,
+            duplicates='drop'
+        )
+
+        # Step 4: Stratified split on accounts for train/val/test (preserving degree distribution)
         train_accounts, temp_accounts = train_test_split(
             account_status,
             test_size=0.3,
-            stratify=account_status['Is Laundering'],
+            stratify=account_status['degree_bin'],
             random_state=RANDOM_STATE
         )
 
         val_accounts, test_accounts = train_test_split(
             temp_accounts,
             test_size=0.5,
-            stratify=temp_accounts['Is Laundering'],
+            stratify=temp_accounts['degree_bin'],
             random_state=RANDOM_STATE
         )
 
-        # Step 4: Filter transactions where both accounts are in the split
+        del temp_accounts, effective_bins, unique_degrees, account_degrees, account_status
+
+        # Step 5: Filter transactions where both accounts are in the split
         train_ids = set(train_accounts['Account'])
         val_ids = set(val_accounts['Account'])
         test_ids = set(test_accounts['Account'])
