@@ -65,8 +65,10 @@ class AbstractDataModule(LightningDataset):
             for count in counts:
                 all_pairs += count * (count - 1)
 
-            num_edges = data.edge_index.shape[1]
-            num_non_edges = all_pairs - num_edges
+            # Count unique edges (remove multi-edges)
+            unique_edges = torch.unique(data.edge_index, dim=1)
+            num_unique_edges = unique_edges.shape[1]
+            num_non_edges = all_pairs - num_unique_edges
 
             edge_types = data.edge_attr.sum(dim=0)
             assert num_non_edges >= 0

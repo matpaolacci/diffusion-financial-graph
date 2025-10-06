@@ -13,7 +13,57 @@ from src.datasets.utils.financial_dataset_builder_utilities import DatasetBuilde
 
 RANDOM_STATE = 42
 SAMPLING_FRACTION_NON_LAUNDERING_NODES = 0
-MIN_DEGREE_LAUNDERING_NODES = 85  # Minimum number of transactions for laundering nodes
+SAMPLING_FRACTION_LAUNDERING_NODES = 0.4  # Fraction of laundering nodes to keep (0-1)
+NUM_DEGREE_BINS = 100  # Number of bins for stratified degree sampling
+def sample_nodes_preserving_degree_distribution(accounts_df, degrees, sampling_fraction, num_bins, random_state):
+    """
+    Sample accounts while preserving the degree distribution using stratified sampling.
+
+    Args:
+        accounts_df: DataFrame with account information
+        degrees: Series with account degrees (index=account, value=degree)
+        sampling_fraction: Fraction of accounts to sample (0-1)
+        num_bins: Number of degree bins for stratification
+        random_state: Random state for reproducibility
+
+    Returns:
+        Sampled accounts DataFrame
+    """
+    if sampling_fraction >= 1.0:
+        return accounts_df
+
+    if sampling_fraction <= 0:
+        return pd.DataFrame(columns=accounts_df.columns)
+
+    # Add degree information to accounts
+    accounts_with_degree = accounts_df.copy()
+    accounts_with_degree['degree'] = accounts_with_degree['Account'].map(degrees)
+
+    # Print unique degree values
+    unique_degrees = accounts_with_degree['degree'].nunique()
+    print(f"  Number of unique degree values: {unique_degrees}")
+    print(f"  Requested bins: {num_bins}, effective bins: {min(num_bins, unique_degrees)}")
+
+    # Create degree bins using quantiles for balanced stratification
+    accounts_with_degree['degree_bin'] = pd.qcut(
+        accounts_with_degree['degree'],
+        q=num_bins,
+        labels=False,
+        duplicates='drop'
+    )
+
+    # Stratified sampling by degree bin
+    sampled_accounts = []
+    for bin_id in accounts_with_degree['degree_bin'].unique():
+        bin_accounts = accounts_with_degree[accounts_with_degree['degree_bin'] == bin_id]
+        sample_size = max(1, int(len(bin_accounts) * sampling_fraction))
+
+        sampled_bin = bin_accounts.sample(n=sample_size, random_state=random_state)
+        sampled_accounts.append(sampled_bin)
+
+    result = pd.concat(sampled_accounts).drop(columns=['degree', 'degree_bin']).reset_index(drop=True)
+    return result
+
 
 class FinancialGraph(InMemoryDataset):
 
@@ -64,8 +114,8 @@ class FinancialGraph(InMemoryDataset):
 
         laundering_accounts = account_status[account_status['Is Laundering'] == 1]
 
-        # Filter laundering accounts by degree (transaction count)
-        if MIN_DEGREE_LAUNDERING_NODES > 0:
+        # Sample laundering accounts while preserving degree distribution
+        if SAMPLING_FRACTION_LAUNDERING_NODES < 1.0:
             original_laundering_count = len(laundering_accounts)
 
             # Count transactions per laundering account (as source or destination)
@@ -74,14 +124,18 @@ class FinancialGraph(InMemoryDataset):
                 df[df['Account.1'].isin(laundering_accounts['Account'])]['Account.1'].rename('Account')
             ]).value_counts()
 
-            # Keep only laundering accounts with degree >= threshold
-            high_degree_accounts = laundering_degree[laundering_degree >= MIN_DEGREE_LAUNDERING_NODES].index
-            laundering_accounts = laundering_accounts[laundering_accounts['Account'].isin(high_degree_accounts)].reset_index(drop=True)
+            laundering_accounts = sample_nodes_preserving_degree_distribution(
+                laundering_accounts,
+                laundering_degree_before,
+                SAMPLING_FRACTION_LAUNDERING_NODES,
+                NUM_DEGREE_BINS,
+                RANDOM_STATE
+            )
 
             removed_count = original_laundering_count - len(laundering_accounts)
             removed_percentage = (removed_count / original_laundering_count * 100) if original_laundering_count > 0 else 0
 
-            print(f"\nAfter filtering laundering nodes by degree (>= {MIN_DEGREE_LAUNDERING_NODES} transactions):")
+            print(f"\nAfter sampling laundering nodes (preserving degree distribution, {SAMPLING_FRACTION_LAUNDERING_NODES * 100:.1f}%):")
             print(f"  Remaining laundering accounts: {len(laundering_accounts)}")
             print(f"  Removed laundering accounts: {removed_count} ({removed_percentage:.2f}%)")
 
@@ -210,6 +264,7 @@ class FinancialGraph(InMemoryDataset):
             avg_subgraph_size += N
 
             assert N > 1
+            assert (subgraph_edge_index[0] != subgraph_edge_index[1]).all(), "Self-loops detected in subgraph"
 
             # 5.2 Get the edge attributes for the subgraph
             subgraph_edge_attr_full = edge_attr[edge_mask]
