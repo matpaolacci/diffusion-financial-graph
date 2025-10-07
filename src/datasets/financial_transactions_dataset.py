@@ -312,7 +312,7 @@ class FinancialGraph(InMemoryDataset):
             assert (subgraph_edge_index[0] != subgraph_edge_index[1]).all(), "Self-loops detected in subgraph"
 
             # 5.2 Get the edge attributes for the subgraph
-            subgraph_edge_attr_full = edge_attr[edge_mask]
+            subgraph_edge_attr = edge_attr[edge_mask]
 
             perm = (subgraph_edge_index[0] * N + subgraph_edge_index[1]).argsort()
             subgraph_edge_index = subgraph_edge_index[:, perm]
