@@ -163,7 +163,7 @@ class FinancialGraph(InMemoryDataset):
                 f.write(f"  Laundering transactions: {len(df[df['Is Laundering'] == 1])} ({len(df[df['Is Laundering'] == 1])/len(df)*100:.2f}%)\n")
 
         else:
-            # Combine sampled laundering + sampled non-laundering
+            # Combine sampled laundering + sampled non-laundering and filter df by the sampled nodes
             account_status = laundering_accounts.reset_index(drop=True)
             sampled_ids = set(account_status['Account'])
             df = df[df['Account'].isin(sampled_ids) & df['Account.1'].isin(sampled_ids)].reset_index(drop=True)
