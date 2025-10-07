@@ -3,6 +3,8 @@ todo.md
 data/
 orca
 
+result_financial_analysis/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
