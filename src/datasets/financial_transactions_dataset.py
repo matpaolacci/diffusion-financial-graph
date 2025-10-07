@@ -10,7 +10,7 @@ from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.utils import k_hop_subgraph, remove_self_loops, to_undirected
 from src.datasets.abstract_dataset import AbstractDataModule, AbstractDatasetInfos
 from src.datasets.utils.financial_dataset_builder_utilities import DatasetBuilderUtilities
-from src.datasets.utils.plots import plot_degree_distribution_comparison, plot_affinity_distribution, plot_degree_distribution_splits, plot_affinity_distribution_splits
+from src.datasets.utils.plots import plot_degree_distribution_comparison, plot_affinity_distribution, plot_degree_distribution_splits, plot_affinity_distribution_splits, plot_khop_subgraph_distributions
 from src.datasets.utils.sampling import sample_nodes_preserving_degree_distribution
 
 RANDOM_STATE = 42
@@ -298,7 +298,8 @@ class FinancialGraph(InMemoryDataset):
         ).to(torch.float)
 
         data_list: list[Data] = []
-        avg_subgraph_size = 0
+        subgraph_node_sizes = []
+        subgraph_edge_counts = []
 
         # 5. Iterate over each account and build the k-hop subgraph
         for _, node_index in account_2idx.items():
@@ -306,7 +307,12 @@ class FinancialGraph(InMemoryDataset):
             subset_nodes, subgraph_edge_index, _, edge_mask = \
                 k_hop_subgraph(node_index, self.k_hop, edge_indexes, relabel_nodes=True)
             N = len(subset_nodes)
-            avg_subgraph_size += N
+            
+            # Divide by 2 because to_undirected duplicates edges (both directions)
+            num_edges = subgraph_edge_index.shape[1] // 2
+
+            subgraph_node_sizes.append(N)
+            subgraph_edge_counts.append(num_edges)
 
             assert N > 1
             assert (subgraph_edge_index[0] != subgraph_edge_index[1]).all(), "Self-loops detected in subgraph"
@@ -320,7 +326,7 @@ class FinancialGraph(InMemoryDataset):
 
             # 5.5 Create the true labels (Is Laundering) for the subgraph edges
             x = F.one_hot(
-                torch.tensor(nodes_df.iloc[subset_nodes]['Is Laundering'].values, dtype=torch.long), 
+                torch.tensor(nodes_df.iloc[subset_nodes]['Is Laundering'].values, dtype=torch.long),
                 num_classes=2
             ).float()
             y = torch.zeros(size=(1, 0), dtype=torch.float)
@@ -335,13 +341,25 @@ class FinancialGraph(InMemoryDataset):
             )
             data_list.append(data)
 
-        avg_subgraph_size /= len(account_2idx)
+        avg_subgraph_size = sum(subgraph_node_sizes) / len(subgraph_node_sizes) if subgraph_node_sizes else 0
+        avg_subgraph_edges = sum(subgraph_edge_counts) / len(subgraph_edge_counts) if subgraph_edge_counts else 0
 
         stats_path = os.path.join(self.raw_dir, 'stats.txt')
         with open(stats_path, 'a') as f:
             f.write(f"\n{self.split.capitalize()} k-hop subgraphs:\n")
             f.write(f"  Number of k-hop subgraphs: {len(data_list)}\n")
-            f.write(f"  Average k-hop subgraph size: {avg_subgraph_size:.2f}\n")
+            f.write(f"  Node statistics:\n")
+            f.write(f"    Average nodes per subgraph: {avg_subgraph_size:.2f}\n")
+            f.write(f"    Min nodes per subgraph: {min(subgraph_node_sizes) if subgraph_node_sizes else 0}\n")
+            f.write(f"    Max nodes per subgraph: {max(subgraph_node_sizes) if subgraph_node_sizes else 0}\n")
+            f.write(f"  Edge statistics:\n")
+            f.write(f"    Average edges per subgraph: {avg_subgraph_edges:.2f}\n")
+            f.write(f"    Min edges per subgraph: {min(subgraph_edge_counts) if subgraph_edge_counts else 0}\n")
+            f.write(f"    Max edges per subgraph: {max(subgraph_edge_counts) if subgraph_edge_counts else 0}\n")
+
+        # Plot k-hop subgraph distributions
+        plot_path = os.path.join(self.raw_dir, f'{self.split}_khop_distributions.png')
+        plot_khop_subgraph_distributions(subgraph_node_sizes, subgraph_edge_counts, self.split, plot_path)
 
         torch.save(self.collate(data_list), self.processed_paths[self.file_idx])
 

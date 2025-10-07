@@ -10,14 +10,16 @@ def parse_graph_file(file_path: str):
         file_path: Path to the graph file
 
     Returns:
-        Tuple of (edges_df, nodes_df, graph_sizes) where:
+        Tuple of (edges_df, nodes_df, graph_sizes, graph_edge_counts) where:
         - edges_df: DataFrame with columns: src, dst, is_laundering, affinity
         - nodes_df: DataFrame with columns: node_id, label
         - graph_sizes: List of integers representing the size (number of nodes) of each graph
+        - graph_edge_counts: List of integers representing the number of edges in each graph
     """
     edges = []
     nodes = []
     graph_sizes = []
+    graph_edge_counts = []
     graph_id = 0
 
     with open(file_path, 'r') as f:
@@ -62,10 +64,12 @@ def parse_graph_file(file_path: str):
                             i += 1
 
                     # Extract edges (only upper triangle since undirected)
+                    edge_count = 0
                     for src in range(n):
                         for dst in range(src + 1, n):
                             affinity = adj_matrix[src][dst]
                             if affinity > 0:  # Skip missing edges
+                                edge_count += 1
                                 is_laundering = max(node_labels[src], node_labels[dst])
                                 src_id = f"{graph_id}.{src + 1}"
                                 dst_id = f"{graph_id}.{dst + 1}"
@@ -75,7 +79,8 @@ def parse_graph_file(file_path: str):
                                     'is_laundering': is_laundering,
                                     'affinity': affinity
                                 })
+                    graph_edge_counts.append(edge_count)
         else:
             i += 1
 
-    return pd.DataFrame(edges), pd.DataFrame(nodes), graph_sizes
+    return pd.DataFrame(edges), pd.DataFrame(nodes), graph_sizes, graph_edge_counts

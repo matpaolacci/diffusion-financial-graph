@@ -18,16 +18,18 @@ def plot_degree_distribution_comparison(degrees_before, degrees_after, title, sa
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
     # Histogram before sampling
-    axes[0].hist(log_degrees_before, bins=50, alpha=0.7, color='blue', edgecolor='black')
+    weights_before = np.ones_like(log_degrees_before) / len(log_degrees_before) * 100
+    axes[0].hist(log_degrees_before, bins=50, weights=weights_before, alpha=0.7, color='blue', edgecolor='black')
     axes[0].set_xlabel('log2(Degree)')
-    axes[0].set_ylabel('Frequency')
+    axes[0].set_ylabel('Percentage (%)')
     axes[0].set_title(f'Before Sampling (n={len(degrees_before)})')
     axes[0].grid(True, alpha=0.3)
 
     # Histogram after sampling
-    axes[1].hist(log_degrees_after, bins=50, alpha=0.7, color='green', edgecolor='black')
+    weights_after = np.ones_like(log_degrees_after) / len(log_degrees_after) * 100
+    axes[1].hist(log_degrees_after, bins=50, weights=weights_after, alpha=0.7, color='green', edgecolor='black')
     axes[1].set_xlabel('log2(Degree)')
-    axes[1].set_ylabel('Frequency')
+    axes[1].set_ylabel('Percentage (%)')
     axes[1].set_title(f'After Sampling (n={len(degrees_after)})')
     axes[1].grid(True, alpha=0.3)
 
@@ -53,20 +55,24 @@ def plot_affinity_distribution(affinity_series, save_path):
     categories = ['very_low', 'low', 'medium', 'high', 'very_high']
     counts = [affinity_counts.get(cat, 0) for cat in categories]
 
+    # Convert to percentages
+    total = sum(counts)
+    percentages = [(count / total * 100) if total > 0 else 0 for count in counts]
+
     # Create bar plot
     fig, ax = plt.subplots(figsize=(10, 6))
-    bars = ax.bar(categories, counts, color=['#d62728', '#ff7f0e', '#ffdd57', '#2ca02c', '#1f77b4'],
+    bars = ax.bar(categories, percentages, color=['#d62728', '#ff7f0e', '#ffdd57', '#2ca02c', '#1f77b4'],
                    edgecolor='black', alpha=0.8)
 
     # Add value labels on top of bars
     for bar in bars:
         height = bar.get_height()
         ax.text(bar.get_x() + bar.get_width()/2., height,
-                f'{int(height)}',
+                f'{height:.1f}%',
                 ha='center', va='bottom', fontweight='bold')
 
     ax.set_xlabel('Affinity Category', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Number of Edges', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Percentage (%)', fontsize=12, fontweight='bold')
     ax.set_title('Edge Affinity Distribution', fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3, axis='y')
 
@@ -96,30 +102,34 @@ def plot_degree_distribution_splits(degrees_before, degrees_train, degrees_val, 
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
     # Histogram before split
-    axes[0, 0].hist(log_degrees_before, bins=50, alpha=0.7, color='purple', edgecolor='black')
+    weights_before = np.ones_like(log_degrees_before) / len(log_degrees_before) * 100
+    axes[0, 0].hist(log_degrees_before, bins=50, weights=weights_before, alpha=0.7, color='purple', edgecolor='black')
     axes[0, 0].set_xlabel('log2(Degree)')
-    axes[0, 0].set_ylabel('Frequency')
+    axes[0, 0].set_ylabel('Percentage (%)')
     axes[0, 0].set_title(f'Before Split (n={len(degrees_before)})')
     axes[0, 0].grid(True, alpha=0.3)
 
     # Histogram train split
-    axes[0, 1].hist(log_degrees_train, bins=50, alpha=0.7, color='blue', edgecolor='black')
+    weights_train = np.ones_like(log_degrees_train) / len(log_degrees_train) * 100
+    axes[0, 1].hist(log_degrees_train, bins=50, weights=weights_train, alpha=0.7, color='blue', edgecolor='black')
     axes[0, 1].set_xlabel('log2(Degree)')
-    axes[0, 1].set_ylabel('Frequency')
+    axes[0, 1].set_ylabel('Percentage (%)')
     axes[0, 1].set_title(f'Train Split (n={len(degrees_train)})')
     axes[0, 1].grid(True, alpha=0.3)
 
     # Histogram val split
-    axes[1, 0].hist(log_degrees_val, bins=50, alpha=0.7, color='green', edgecolor='black')
+    weights_val = np.ones_like(log_degrees_val) / len(log_degrees_val) * 100
+    axes[1, 0].hist(log_degrees_val, bins=50, weights=weights_val, alpha=0.7, color='green', edgecolor='black')
     axes[1, 0].set_xlabel('log2(Degree)')
-    axes[1, 0].set_ylabel('Frequency')
+    axes[1, 0].set_ylabel('Percentage (%)')
     axes[1, 0].set_title(f'Val Split (n={len(degrees_val)})')
     axes[1, 0].grid(True, alpha=0.3)
 
     # Histogram test split
-    axes[1, 1].hist(log_degrees_test, bins=50, alpha=0.7, color='orange', edgecolor='black')
+    weights_test = np.ones_like(log_degrees_test) / len(log_degrees_test) * 100
+    axes[1, 1].hist(log_degrees_test, bins=50, weights=weights_test, alpha=0.7, color='orange', edgecolor='black')
     axes[1, 1].set_xlabel('log2(Degree)')
-    axes[1, 1].set_ylabel('Frequency')
+    axes[1, 1].set_ylabel('Percentage (%)')
     axes[1, 1].set_title(f'Test Split (n={len(degrees_test)})')
     axes[1, 1].grid(True, alpha=0.3)
 
@@ -150,17 +160,22 @@ def plot_affinity_distribution_splits(affinity_before, affinity_train, affinity_
     def plot_affinity(ax, affinity_series, title, color_set):
         affinity_counts = affinity_series.value_counts()
         counts = [affinity_counts.get(cat, 0) for cat in categories]
-        bars = ax.bar(categories, counts, color=colors, edgecolor='black', alpha=0.8)
+
+        # Convert to percentages
+        total = sum(counts)
+        percentages = [(count / total * 100) if total > 0 else 0 for count in counts]
+
+        bars = ax.bar(categories, percentages, color=colors, edgecolor='black', alpha=0.8)
 
         # Add value labels on top of bars
         for bar in bars:
             height = bar.get_height()
             ax.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{int(height)}',
+                    f'{height:.1f}%',
                     ha='center', va='bottom', fontsize=8)
 
         ax.set_xlabel('Affinity Category')
-        ax.set_ylabel('Number of Edges')
+        ax.set_ylabel('Percentage (%)')
         ax.set_title(title)
         ax.grid(True, alpha=0.3, axis='y')
 
@@ -175,3 +190,38 @@ def plot_affinity_distribution_splits(affinity_before, affinity_train, affinity_
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.close()
     print(f"  Affinity distribution splits plot saved to: {save_path}")
+
+
+def plot_khop_subgraph_distributions(subgraph_node_sizes, subgraph_edge_counts, split_name, save_path):
+    """
+    Plot node and edge distributions for k-hop subgraphs.
+
+    Args:
+        subgraph_node_sizes: List of node counts for each subgraph
+        subgraph_edge_counts: List of edge counts for each subgraph
+        split_name: Name of the split (e.g., 'train', 'val', 'test')
+        save_path: Path to save the figure
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    # Histogram for node distribution
+    weights_nodes = np.ones(len(subgraph_node_sizes)) / len(subgraph_node_sizes) * 100
+    axes[0].hist(subgraph_node_sizes, bins=30, weights=weights_nodes, alpha=0.7, color='blue', edgecolor='black')
+    axes[0].set_xlabel('Number of Nodes', fontsize=12, fontweight='bold')
+    axes[0].set_ylabel('Percentage (%)', fontsize=12, fontweight='bold')
+    axes[0].set_title(f'Node Distribution (n={len(subgraph_node_sizes)})', fontsize=12, fontweight='bold')
+    axes[0].grid(True, alpha=0.3)
+
+    # Histogram for edge distribution
+    weights_edges = np.ones(len(subgraph_edge_counts)) / len(subgraph_edge_counts) * 100
+    axes[1].hist(subgraph_edge_counts, bins=30, weights=weights_edges, alpha=0.7, color='green', edgecolor='black')
+    axes[1].set_xlabel('Number of Edges', fontsize=12, fontweight='bold')
+    axes[1].set_ylabel('Percentage (%)', fontsize=12, fontweight='bold')
+    axes[1].set_title(f'Edge Distribution (n={len(subgraph_edge_counts)})', fontsize=12, fontweight='bold')
+    axes[1].grid(True, alpha=0.3)
+
+    fig.suptitle(f'{split_name.capitalize()} K-hop Subgraph Distributions', fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"  K-hop subgraph distributions plot saved to: {save_path}")
