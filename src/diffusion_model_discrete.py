@@ -151,7 +151,8 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
         epoch_at_metrics, epoch_bond_metrics = self.train_metrics.log_epoch_metrics()
         self.print(f"Epoch {self.current_epoch}: {epoch_at_metrics} -- {epoch_bond_metrics}")
         if torch.cuda.is_available():
-            print(torch.cuda.memory_summary())
+            #print(torch.cuda.memory_summary())
+            pass
         else:
             print("CUDA is not available. Skipping memory summary.")
 
