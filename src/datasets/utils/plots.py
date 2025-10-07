@@ -225,3 +225,60 @@ def plot_khop_subgraph_distributions(subgraph_node_sizes, subgraph_edge_counts, 
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.close()
     print(f"  K-hop subgraph distributions plot saved to: {save_path}")
+
+
+def plot_density_distribution(densities, split_name, save_path):
+    """
+    Plot graph density distribution for a single split, divided into 10 quantiles (deciles).
+
+    Args:
+        densities: List or array of density values
+        split_name: Name of the split (e.g., 'train', 'val', 'test')
+        save_path: Path to save the figure
+    """
+    densities_arr = np.array(densities)
+
+    # Calculate 10 quantiles (deciles)
+    quantiles = np.percentile(densities_arr, [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
+
+    # Assign each density to a quantile bin
+    quantile_labels = ['Q1\n(0-10%)', 'Q2\n(10-20%)', 'Q3\n(20-30%)', 'Q4\n(30-40%)', 'Q5\n(40-50%)',
+                       'Q6\n(50-60%)', 'Q7\n(60-70%)', 'Q8\n(70-80%)', 'Q9\n(80-90%)', 'Q10\n(90-100%)']
+    quantile_counts = [0] * 10
+
+    for density in densities_arr:
+        for i in range(10):
+            if quantiles[i] <= density <= quantiles[i + 1]:
+                quantile_counts[i] += 1
+                break
+
+    # Convert to percentages
+    total = sum(quantile_counts)
+    percentages = [(count / total * 100) if total > 0 else 0 for count in quantile_counts]
+
+    # Define color based on split name
+    color_map = {'train': 'blue', 'val': 'green', 'test': 'orange', 'dataset': 'purple'}
+    color = color_map.get(split_name.lower(), 'gray')
+
+    # Create bar plot
+    fig, ax = plt.subplots(figsize=(14, 6))
+    bars = ax.bar(quantile_labels, percentages, color=color, edgecolor='black', alpha=0.7)
+
+    # Add value labels on top of bars
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height,
+                f'{height:.1f}%',
+                ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+    ax.set_xlabel('Density Quantile', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Percentage (%)', fontsize=12, fontweight='bold')
+    ax.set_title(f'{split_name.capitalize()} - Density Distribution (n={len(densities)})',
+                 fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+    ax.tick_params(axis='x', rotation=0)
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"  Density distribution plot saved to: {save_path}")

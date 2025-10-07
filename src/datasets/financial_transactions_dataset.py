@@ -10,7 +10,7 @@ from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.utils import k_hop_subgraph, remove_self_loops, to_undirected
 from src.datasets.abstract_dataset import AbstractDataModule, AbstractDatasetInfos
 from src.datasets.utils.financial_dataset_builder_utilities import DatasetBuilderUtilities
-from src.datasets.utils.plots import plot_degree_distribution_comparison, plot_affinity_distribution, plot_degree_distribution_splits, plot_affinity_distribution_splits, plot_khop_subgraph_distributions
+from src.datasets.utils.plots import plot_degree_distribution_comparison, plot_affinity_distribution, plot_degree_distribution_splits, plot_affinity_distribution_splits, plot_khop_subgraph_distributions, plot_density_distribution
 from src.datasets.utils.sampling import sample_nodes_preserving_degree_distribution
 
 RANDOM_STATE = 42
@@ -300,6 +300,7 @@ class FinancialGraph(InMemoryDataset):
         data_list: list[Data] = []
         subgraph_node_sizes = []
         subgraph_edge_counts = []
+        subgraph_densities = []
 
         # 5. Iterate over each account and build the k-hop subgraph
         for _, node_index in account_2idx.items():
@@ -311,8 +312,12 @@ class FinancialGraph(InMemoryDataset):
             # Divide by 2 because to_undirected duplicates edges (both directions)
             num_edges = subgraph_edge_index.shape[1] // 2
 
+            # Calculate graph density: density = 2 * num_edges / (N * (N - 1))
+            density = (2 * num_edges / (N * (N - 1))) if N > 1 else 0.0
+
             subgraph_node_sizes.append(N)
             subgraph_edge_counts.append(num_edges)
+            subgraph_densities.append(density)
 
             assert N > 1
             assert (subgraph_edge_index[0] != subgraph_edge_index[1]).all(), "Self-loops detected in subgraph"
@@ -360,6 +365,10 @@ class FinancialGraph(InMemoryDataset):
         # Plot k-hop subgraph distributions
         plot_path = os.path.join(self.raw_dir, f'{self.split}_khop_distributions.png')
         plot_khop_subgraph_distributions(subgraph_node_sizes, subgraph_edge_counts, self.split, plot_path)
+
+        # Plot density distribution
+        plot_path_density = os.path.join(self.raw_dir, f'{self.split}_density_distribution.png')
+        plot_density_distribution(subgraph_densities, f"{self.split.capitalize()} split", plot_path_density)
 
         torch.save(self.collate(data_list), self.processed_paths[self.file_idx])
 

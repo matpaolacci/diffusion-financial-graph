@@ -4,6 +4,7 @@ data/
 orca
 
 result_financial_analysis/
+sampling/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

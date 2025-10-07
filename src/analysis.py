@@ -3,6 +3,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from parse.final_sampling import parse_graph_file
+from datasets.utils.plots import plot_density_distribution
 
 def plot_degree_distribution(df, save_path='degree_distribution.png'):
     """
@@ -101,6 +102,15 @@ if __name__ == "__main__":
 
     avg_graph_size = np.mean(graph_sizes) if graph_sizes else 0
 
+    # Calculate graph densities
+    graph_densities = []
+    for i in range(len(graph_sizes)):
+        num_nodes = graph_sizes[i]
+        num_edges = graph_edge_counts[i]
+        # Calculate density: 2 * num_edges / (N * (N - 1))
+        density = (2 * num_edges / (num_nodes * (num_nodes - 1))) if num_nodes > 1 else 0.0
+        graph_densities.append(density)
+
     # Create output directory if it doesn't exist
     output_dir = "result_financial_analysis"
     os.makedirs(output_dir, exist_ok=True)
@@ -122,10 +132,15 @@ if __name__ == "__main__":
         f.write(f"Graph Edge Statistics:\n")
         f.write(f"  Average edges per graph: {np.mean(graph_edge_counts) if graph_edge_counts else 0:.2f}\n")
         f.write(f"  Min edges per graph: {min(graph_edge_counts) if graph_edge_counts else 0}\n")
-        f.write(f"  Max edges per graph: {max(graph_edge_counts) if graph_edge_counts else 0}\n")
+        f.write(f"  Max edges per graph: {max(graph_edge_counts) if graph_edge_counts else 0}\n\n")
+        f.write(f"Graph Density Statistics:\n")
+        f.write(f"  Average density: {np.mean(graph_densities) if graph_densities else 0:.4f}\n")
+        f.write(f"  Min density: {min(graph_densities) if graph_densities else 0:.4f}\n")
+        f.write(f"  Max density: {max(graph_densities) if graph_densities else 0:.4f}\n")
 
     print(f"\nStatistics saved to: {stats_path}")
 
     # Generate plots
     plot_degree_distribution(edges_df, os.path.join(output_dir, "degree_distribution.png"))
     plot_affinity_distribution(edges_df, os.path.join(output_dir, "affinity_distribution.png"))
+    plot_density_distribution(graph_densities, "Generated Dataset", os.path.join(output_dir, "density_distribution.png"))
