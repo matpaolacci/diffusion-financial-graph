@@ -300,9 +300,9 @@ class FinancialGraph(InMemoryDataset):
         data_list: list[Data] = []
         avg_subgraph_size = 0
 
-        # 5. Iterate over each laundering account and build the k-hop subgraph
+        # 5. Iterate over each account and build the k-hop subgraph
         for _, node_index in account_2idx.items():
-            # 5.1 Build the k-hop subgraph around the laundering account node
+            # 5.1 Build the k-hop subgraph around the account node
             subset_nodes, subgraph_edge_index, _, edge_mask = \
                 k_hop_subgraph(node_index, self.k_hop, edge_indexes, relabel_nodes=True)
             N = len(subset_nodes)
@@ -313,11 +313,6 @@ class FinancialGraph(InMemoryDataset):
 
             # 5.2 Get the edge attributes for the subgraph
             subgraph_edge_attr_full = edge_attr[edge_mask]
-
-            # 5.3 Remove self-loops from edge_index and edge_attr
-            subgraph_edge_index, subgraph_edge_attr = remove_self_loops(
-                subgraph_edge_index, subgraph_edge_attr_full
-            )
 
             perm = (subgraph_edge_index[0] * N + subgraph_edge_index[1]).argsort()
             subgraph_edge_index = subgraph_edge_index[:, perm]
