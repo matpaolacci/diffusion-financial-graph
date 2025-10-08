@@ -56,11 +56,18 @@ class FinancialGraph(InMemoryDataset):
         # Keep only required columns
         df = df[['Account', 'Account.1', 'Is Laundering']].copy()
 
-        # Group edges by (Source, Destination) and count occurrences
-        df_grouped = df.groupby(['Account', 'Account.1'], as_index=False).agg({
+        # Normalize edges for undirected graph: (A,B) and (B,A) are treated as the same edge
+        df['src'] = df.apply(lambda row: min(row['Account'], row['Account.1']), axis=1)
+        df['dst'] = df.apply(lambda row: max(row['Account'], row['Account.1']), axis=1)
+
+        # Group edges by normalized (src, dst) and count occurrences
+        df_grouped = df.groupby(['src', 'dst'], as_index=False).agg({
             'Is Laundering': 'max'  # Keep laundering status (max ensures if any transaction was laundering, it's marked as such)
         })
-        df_grouped['count'] = df.groupby(['Account', 'Account.1']).size().values
+        df_grouped['count'] = df.groupby(['src', 'dst']).size().values
+
+        # Rename back to original column names
+        df_grouped.rename(columns={'src': 'Account', 'dst': 'Account.1'}, inplace=True)
 
         # Categorize count into 5 quintile-based categories
         quintiles = df_grouped['count'].quantile([0.2, 0.4, 0.6, 0.8]).values
